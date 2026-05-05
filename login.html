@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>เข้าสู่ระบบ — Black Chicken Farm</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="shortcut icon" href="favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0a1f44;
+    --navy-light: #14305c;
+    --gold: #c9a961;
+    --gold-light: #e0c585;
+    --ivory: #f7f4ec;
+    --blue: #0066b3;
+    --blue-light: #1a8cd8;
+    --shadow: 0 20px 60px rgba(10, 31, 68, 0.25);
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Sarabun', sans-serif;
+    background: linear-gradient(135deg, #0a1f44 0%, #14305c 50%, #0066b3 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  body::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(201, 169, 97, 0.08) 0%, transparent 50%);
+    animation: rotate 30s linear infinite;
+    pointer-events: none;
+  }
+  @keyframes rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .login-card {
+    background: var(--ivory);
+    border-radius: var(--radius);
+    padding: 48px 40px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: var(--shadow);
+    border: 1px solid rgba(201, 169, 97, 0.3);
+    position: relative;
+    z-index: 1;
+    animation: fadeUp 0.6s ease-out;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .logo-wrap {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .logo-wrap img {
+    width: 130px;
+    height: 130px;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 12px rgba(10, 31, 68, 0.15));
+  }
+  h1 {
+    font-family: 'Noto Serif Thai', serif;
+    color: var(--navy);
+    font-size: 26px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #6b7280;
+    font-size: 14px;
+    margin-bottom: 32px;
+  }
+  .field {
+    position: relative;
+    margin-bottom: 20px;
+  }
+  .field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--navy);
+    margin-bottom: 8px;
+    letter-spacing: 0.3px;
+  }
+  .field input {
+    width: 100%;
+    padding: 14px 16px;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    font-size: 16px;
+    font-family: 'Sarabun', sans-serif;
+    background: white;
+    transition: all 0.2s;
+    color: var(--navy);
+  }
+  .field input:focus {
+    outline: none;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 4px rgba(0, 102, 179, 0.1);
+  }
+  .toggle-pw {
+    position: absolute;
+    right: 14px;
+    top: 38px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 6px;
+    font-size: 18px;
+    user-select: none;
+  }
+  .toggle-pw:hover { color: var(--navy); }
+  button.submit {
+    width: 100%;
+    padding: 14px;
+    background: linear-gradient(135deg, var(--navy) 0%, var(--blue) 100%);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: 'Sarabun', sans-serif;
+    letter-spacing: 0.5px;
+    margin-top: 8px;
+  }
+  button.submit:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(10, 31, 68, 0.3);
+  }
+  button.submit:active { transform: translateY(0); }
+  button.submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .error {
+    color: #dc2626;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    margin-bottom: 16px;
+    display: none;
+    text-align: center;
+  }
+  .error.show { display: block; animation: shake 0.4s; }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+  .footer {
+    text-align: center;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(10, 31, 68, 0.08);
+    color: #9ca3af;
+    font-size: 12px;
+  }
+  .footer .gold { color: var(--gold); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="logo-wrap">
+      <img src="logo.png" alt="Black Chicken Farm">
+    </div>
+    <h1>ระบบจัดการภาษีรถยนต์</h1>
+    <p class="subtitle">Black Chicken Farm — Vehicle Tax Management</p>
+
+    <div class="error" id="errorBox">รหัสผ่านไม่ถูกต้อง</div>
+
+    <div class="field">
+      <label for="pw">รหัสผ่าน</label>
+      <input type="password" id="pw" placeholder="กรอกรหัสผ่าน" autocomplete="current-password" autofocus>
+      <button type="button" class="toggle-pw" id="togglePw" aria-label="แสดง/ซ่อนรหัสผ่าน">👁</button>
+    </div>
+
+    <button class="submit" id="loginBtn">เข้าสู่ระบบ</button>
+
+    <div class="footer">
+      <span class="gold">●</span> Sukmart Holding · Since 2003
+    </div>
+  </div>
+
+<script>
+  // SHA-256 of "ID npjsk PS 0923"
+  const PW_HASH = "b51721f1d9517aadf7445c8734754f71a2b90d687c811a1b7473ace208684456";
+  const SESSION_KEY = "bcf_vt_auth";
+
+  async function sha256(text) {
+    const buf = new TextEncoder().encode(text);
+    const hash = await crypto.subtle.digest("SHA-256", buf);
+    return Array.from(new Uint8Array(hash))
+      .map(b => b.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  // If already logged in, redirect to main
+  if (sessionStorage.getItem(SESSION_KEY) === "1") {
+    window.location.href = "index.html";
+  }
+
+  const pwInput = document.getElementById("pw");
+  const errorBox = document.getElementById("errorBox");
+  const btn = document.getElementById("loginBtn");
+  const toggleBtn = document.getElementById("togglePw");
+
+  toggleBtn.addEventListener("click", () => {
+    if (pwInput.type === "password") {
+      pwInput.type = "text";
+      toggleBtn.textContent = "🙈";
+    } else {
+      pwInput.type = "password";
+      toggleBtn.textContent = "👁";
+    }
+  });
+
+  async function attemptLogin() {
+    const pw = pwInput.value;
+    if (!pw) {
+      errorBox.textContent = "กรุณากรอกรหัสผ่าน";
+      errorBox.classList.add("show");
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = "กำลังตรวจสอบ...";
+    const h = await sha256(pw);
+    if (h === PW_HASH) {
+      sessionStorage.setItem(SESSION_KEY, "1");
+      btn.textContent = "เข้าสู่ระบบสำเร็จ ✓";
+      setTimeout(() => { window.location.href = "index.html"; }, 400);
+    } else {
+      errorBox.textContent = "รหัสผ่านไม่ถูกต้อง";
+      errorBox.classList.remove("show");
+      void errorBox.offsetWidth;
+      errorBox.classList.add("show");
+      btn.disabled = false;
+      btn.textContent = "เข้าสู่ระบบ";
+      pwInput.value = "";
+      pwInput.focus();
+    }
+  }
+
+  btn.addEventListener("click", attemptLogin);
+  pwInput.addEventListener("keydown", e => { if (e.key === "Enter") attemptLogin(); });
+</script>
+</body>
+</html>

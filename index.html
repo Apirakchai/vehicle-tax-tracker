@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ระบบจัดการภาษีรถยนต์ — Black Chicken Farm</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="shortcut icon" href="favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0a1f44;
+    --navy-light: #14305c;
+    --gold: #c9a961;
+    --gold-light: #e0c585;
+    --ivory: #f7f4ec;
+    --ivory-dark: #ede8db;
+    --blue: #0066b3;
+    --blue-light: #1a8cd8;
+    --green: #16a34a;
+    --amber: #f59e0b;
+    --red: #dc2626;
+    --gray: #6b7280;
+    --border: #e5e7eb;
+    --shadow-sm: 0 1px 3px rgba(10, 31, 68, 0.08);
+    --shadow: 0 4px 12px rgba(10, 31, 68, 0.1);
+    --shadow-lg: 0 12px 32px rgba(10, 31, 68, 0.15);
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Sarabun', sans-serif;
+    background: var(--ivory);
+    color: var(--navy);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  /* Header */
+  header {
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 70%, var(--blue) 100%);
+    color: white;
+    padding: 20px 32px;
+    box-shadow: var(--shadow);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-inner {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .brand img {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+    background: white;
+    padding: 4px;
+    border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .brand-text h1 {
+    font-family: 'Noto Serif Thai', serif;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  .brand-text .sub {
+    font-size: 12px;
+    opacity: 0.8;
+    color: var(--gold-light);
+    letter-spacing: 0.5px;
+  }
+  .header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .btn {
+    padding: 9px 16px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    font-family: 'Sarabun', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.18s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .btn-primary {
+    background: var(--gold);
+    color: var(--navy);
+  }
+  .btn-primary:hover { background: var(--gold-light); transform: translateY(-1px); }
+  .btn-ghost {
+    background: rgba(255,255,255,0.12);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+  .btn-ghost:hover { background: rgba(255,255,255,0.2); }
+  .btn-secondary {
+    background: white;
+    color: var(--navy);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { background: var(--ivory-dark); }
+  .btn-danger {
+    background: #fef2f2;
+    color: var(--red);
+    border: 1px solid #fecaca;
+  }
+  .btn-danger:hover { background: #fee2e2; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+
+  /* Main */
+  main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 28px 32px 60px;
+  }
+
+  /* Stats */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  .stat-card {
+    background: white;
+    padding: 20px;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    border-left: 4px solid var(--blue);
+    transition: transform 0.2s;
+  }
+  .stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+  .stat-card.warning { border-left-color: var(--amber); }
+  .stat-card.danger { border-left-color: var(--red); }
+  .stat-card.success { border-left-color: var(--green); }
+  .stat-label {
+    font-size: 13px;
+    color: var(--gray);
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+  .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--navy);
+    font-family: 'Noto Serif Thai', serif;
+  }
+  .stat-sub {
+    font-size: 12px;
+    color: var(--gray);
+    margin-top: 4px;
+  }
+
+  /* Toolbar */
+  .toolbar {
+    background: white;
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+  }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--ivory-dark);
+    padding: 4px;
+    border-radius: 10px;
+  }
+  .tab {
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-family: 'Sarabun', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--gray);
+    border-radius: 8px;
+    transition: all 0.18s;
+  }
+  .tab.active {
+    background: white;
+    color: var(--navy);
+    box-shadow: var(--shadow-sm);
+  }
+  .search-box {
+    flex: 1;
+    min-width: 200px;
+    position: relative;
+  }
+  .search-box input {
+    width: 100%;
+    padding: 10px 14px 10px 40px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-family: 'Sarabun', sans-serif;
+    font-size: 14px;
+    background: var(--ivory);
+  }
+  .search-box input:focus {
+    outline: none;
+    border-color: var(--blue);
+    background: white;
+  }
+  .search-box::before {
+    content: "🔍";
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0.5;
+    font-size: 14px;
+  }
+  .filter-select {
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-family: 'Sarabun', sans-serif;
+    font-size: 14px;
+    background: white;
+    cursor: pointer;
+    color: var(--navy);
+  }
+
+  /* Table */
+  .table-wrap {
+    background: white;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  .table-scroll {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    min-width: 1100px;
+  }
+  thead {
+    background: linear-gradient(180deg, var(--navy) 0%, var(--navy-light) 100%);
+    color: white;
+  }
+  thead th {
+    padding: 14px 12px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+  tbody tr:hover { background: var(--ivory); }
+  tbody tr:last-child { border-bottom: none; }
+  tbody td {
+    padding: 12px;
+    vertical-align: middle;
+  }
+  .plate {
+    font-weight: 700;
+    color: var(--navy);
+    font-size: 14px;
+    background: var(--ivory-dark);
+    padding: 4px 10px;
+    border-radius: 6px;
+    display: inline-block;
+    white-space: nowrap;
+  }
+  .type-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .type-tax { background: #dbeafe; color: #1e40af; }
+  .type-insurance { background: #fef3c7; color: #92400e; }
+  .type-prb { background: #dcfce7; color: #166534; }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .status-ok { background: #dcfce7; color: var(--green); }
+  .status-soon { background: #fef3c7; color: #92400e; }
+  .status-urgent { background: #fee2e2; color: var(--red); }
+  .status-overdue { background: var(--red); color: white; }
+  .status-pill::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .actions-cell {
+    display: flex;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .icon-btn {
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.15s;
+  }
+  .icon-btn:hover { transform: scale(1.1); }
+  .icon-edit { background: #dbeafe; color: var(--blue); }
+  .icon-edit:hover { background: #bfdbfe; }
+  .icon-delete { background: #fee2e2; color: var(--red); }
+  .icon-delete:hover { background: #fecaca; }
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--gray);
+  }
+  .empty-state h3 {
+    font-family: 'Noto Serif Thai', serif;
+    color: var(--navy);
+    margin-bottom: 8px;
+  }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 31, 68, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 200;
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 20px;
+    overflow-y: auto;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: white;
+    border-radius: var(--radius);
+    width: 100%;
+    max-width: 720px;
+    box-shadow: var(--shadow-lg);
+    margin: 40px auto;
+    animation: modalIn 0.25s ease-out;
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: scale(0.95) translateY(-10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .modal-header {
+    padding: 22px 28px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(180deg, var(--ivory) 0%, white 100%);
+    border-radius: var(--radius) var(--radius) 0 0;
+  }
+  .modal-header h2 {
+    font-family: 'Noto Serif Thai', serif;
+    color: var(--navy);
+    font-size: 20px;
+  }
+  .modal-close {
+    width: 36px; height: 36px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 8px;
+    font-size: 22px;
+    color: var(--gray);
+  }
+  .modal-close:hover { background: var(--ivory-dark); }
+  .modal-body { padding: 24px 28px; }
+  .modal-footer {
+    padding: 18px 28px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    background: var(--ivory);
+    border-radius: 0 0 var(--radius) var(--radius);
+  }
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+  .form-grid .full { grid-column: 1 / -1; }
+  .form-field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--navy);
+    margin-bottom: 6px;
+  }
+  .form-field input, .form-field select, .form-field textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: 'Sarabun', sans-serif;
+    font-size: 14px;
+    color: var(--navy);
+    background: white;
+    transition: border 0.15s;
+  }
+  .form-field textarea { resize: vertical; min-height: 70px; }
+  .form-field input:focus, .form-field select:focus, .form-field textarea:focus {
+    outline: none;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(0, 102, 179, 0.1);
+  }
+  .form-section-title {
+    font-family: 'Noto Serif Thai', serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--gold);
+    margin-top: 8px;
+    margin-bottom: 4px;
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    background: white;
+    padding: 14px 20px;
+    border-radius: 10px;
+    box-shadow: var(--shadow-lg);
+    border-left: 4px solid var(--green);
+    z-index: 300;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transform: translateX(120%);
+    transition: transform 0.3s;
+    max-width: 360px;
+  }
+  .toast.show { transform: translateX(0); }
+  .toast.error { border-left-color: var(--red); }
+  .toast.warning { border-left-color: var(--amber); }
+
+  /* Sync indicator */
+  .sync-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: rgba(255,255,255,0.85);
+    padding: 4px 10px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 12px;
+  }
+  .sync-status .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+  }
+  .sync-status.offline .dot { background: var(--gray); }
+  .sync-status.syncing .dot { background: var(--amber); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* Settings */
+  .settings-row {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-row label {
+    font-weight: 600;
+    color: var(--navy);
+    font-size: 14px;
+    margin-bottom: 6px;
+    display: block;
+  }
+  .settings-row .hint {
+    font-size: 12px;
+    color: var(--gray);
+    margin-top: 4px;
+  }
+  .settings-row input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: monospace;
+  }
+
+  /* Mobile responsive */
+  @media (max-width: 768px) {
+    main { padding: 16px; }
+    header { padding: 14px 16px; }
+    .brand-text h1 { font-size: 16px; }
+    .brand-text .sub { font-size: 11px; }
+    .brand img { width: 44px; height: 44px; }
+    .form-grid { grid-template-columns: 1fr; }
+    .toolbar { padding: 12px; }
+    .modal { margin: 20px auto; }
+    .modal-body { padding: 18px; }
+    .stat-value { font-size: 24px; }
+    .header-actions .btn span.txt { display: none; }
+  }
+
+  /* Print */
+  @media print {
+    header, .toolbar, .actions-cell, .stats { display: none; }
+    body { background: white; }
+    table { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <div class="brand">
+      <img src="logo.png" alt="Logo">
+      <div class="brand-text">
+        <h1>ระบบจัดการภาษีรถยนต์</h1>
+        <div class="sub">BLACK CHICKEN FARM · SUKMART HOLDING</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span class="sync-status" id="syncStatus" title="สถานะการเชื่อมต่อ Google Sheets">
+        <span class="dot"></span><span id="syncText">พร้อมใช้งาน</span>
+      </span>
+      <button class="btn btn-ghost" id="btnSettings" title="ตั้งค่า">⚙ <span class="txt">ตั้งค่า</span></button>
+      <button class="btn btn-ghost" id="btnExport" title="ส่งออก CSV">⬇ <span class="txt">CSV</span></button>
+      <button class="btn btn-primary" id="btnAdd">+ เพิ่มรายการ</button>
+      <button class="btn btn-ghost" id="btnLogout" title="ออกจากระบบ">⏻</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- Stats -->
+  <div class="stats" id="statsBox"></div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-cat="all">ทั้งหมด</button>
+      <button class="tab" data-cat="company">บริษัท</button>
+      <button class="tab" data-cat="personal">ส่วนตัว</button>
+    </div>
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="ค้นหาทะเบียนรถ, บริษัทประกัน, หรือผู้ดำเนินการ...">
+    </div>
+    <select class="filter-select" id="filterStatus">
+      <option value="all">สถานะทั้งหมด</option>
+      <option value="overdue">เลยกำหนด</option>
+      <option value="urgent">ด่วน (≤30 วัน)</option>
+      <option value="soon">ใกล้ครบ (31-90 วัน)</option>
+      <option value="ok">ปกติ</option>
+    </select>
+    <select class="filter-select" id="filterType">
+      <option value="all">ประเภททั้งหมด</option>
+      <option value="ต่อภาษี">ต่อภาษี</option>
+      <option value="ประกันภัย">ประกันภัย</option>
+      <option value="พ.ร.บ.">พ.ร.บ.</option>
+    </select>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>ทะเบียน / รายละเอียด</th>
+            <th>ประเภท</th>
+            <th>บริษัทประกัน</th>
+            <th>ยอดเงิน</th>
+            <th>วันสิ้นสุด</th>
+            <th>คงเหลือ</th>
+            <th>สถานะ</th>
+            <th>ผู้ดำเนินการ</th>
+            <th>หมวด</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+    <div id="emptyState" class="empty-state" style="display:none;">
+      <h3>ไม่พบรายการ</h3>
+      <p>ลองปรับตัวกรองหรือเพิ่มรายการใหม่</p>
+    </div>
+  </div>
+</main>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">เพิ่มรายการใหม่</h2>
+      <button class="modal-close" id="modalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <form id="recordForm">
+        <div class="form-grid">
+          <div class="form-field">
+            <label>หมวด *</label>
+            <select id="f_category" required>
+              <option value="company">บริษัท</option>
+              <option value="personal">ส่วนตัว</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>ทะเบียนรถ *</label>
+            <input type="text" id="f_plate" required placeholder="เช่น บม5999 กจ">
+          </div>
+          <div class="form-field">
+            <label>ประเภทรถ / รายละเอียด</label>
+            <input type="text" id="f_vehicle" placeholder="เช่น Toyota, ISUZU ตู้เย็น">
+          </div>
+          <div class="form-field">
+            <label>เจ้าของ / ผู้ใช้</label>
+            <input type="text" id="f_owner" placeholder="ชื่อเจ้าของ (สำหรับรถส่วนตัว)">
+          </div>
+
+          <div class="form-section-title">ข้อมูลการต่อ</div>
+          <div class="form-field">
+            <label>ประเภท *</label>
+            <select id="f_type" required>
+              <option value="ต่อภาษี">ต่อภาษี</option>
+              <option value="ประกันภัย ป.1">ประกันภัย ป.1</option>
+              <option value="ประกันภัย ป.2">ประกันภัย ป.2</option>
+              <option value="ประกันภัย ป.3">ประกันภัย ป.3</option>
+              <option value="พ.ร.บ.">พ.ร.บ.</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>บริษัทประกัน</label>
+            <input type="text" id="f_company" placeholder="เช่น วิริยะ, กรมขนส่ง">
+          </div>
+          <div class="form-field">
+            <label>วันที่เริ่มต้น</label>
+            <input type="date" id="f_start">
+          </div>
+          <div class="form-field">
+            <label>วันที่สิ้นสุด *</label>
+            <input type="date" id="f_end" required>
+          </div>
+          <div class="form-field">
+            <label>ยอดเงิน (บาท)</label>
+            <input type="number" id="f_amount" step="0.01" placeholder="0.00">
+          </div>
+          <div class="form-field">
+            <label>เดือน</label>
+            <input type="text" id="f_month" placeholder="เช่น มกราคม">
+          </div>
+          <div class="form-field">
+            <label>วันจ่ายรอบก่อน</label>
+            <input type="date" id="f_prevPaid">
+          </div>
+          <div class="form-field">
+            <label>วันจ่ายรอบปัจจุบัน</label>
+            <input type="date" id="f_currPaid">
+          </div>
+          <div class="form-field">
+            <label>ผู้ดำเนินการ</label>
+            <input type="text" id="f_handler" placeholder="ชื่อผู้รับผิดชอบ">
+          </div>
+          <div class="form-field">
+            <label>สถานะการชำระ</label>
+            <select id="f_payStatus">
+              <option value="">- เลือก -</option>
+              <option value="ชำระแล้ว">ชำระแล้ว</option>
+              <option value="รอชำระ">รอชำระ</option>
+              <option value="กำลังดำเนินการ">กำลังดำเนินการ</option>
+            </select>
+          </div>
+          <div class="form-field full">
+            <label>หมายเหตุ</label>
+            <textarea id="f_notes" placeholder="ข้อมูลเพิ่มเติม..."></textarea>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="btnCancel">ยกเลิก</button>
+      <button class="btn btn-primary" id="btnSave">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settingsOverlay">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <h2>ตั้งค่า</h2>
+      <button class="modal-close" id="settingsClose">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="settings-row">
+        <label>Google Apps Script Web App URL</label>
+        <input type="text" id="s_webhookUrl" placeholder="https://script.google.com/macros/s/.../exec">
+        <div class="hint">URL จาก Google Apps Script ที่ Deploy เป็น Web App สำหรับเชื่อมต่อ Google Sheets</div>
+      </div>
+      <div class="settings-row">
+        <label>Email สำหรับรับการแจ้งเตือน</label>
+        <input type="email" id="s_email" placeholder="your-email@example.com">
+        <div class="hint">ใช้แจ้งเตือนรถที่ใกล้ครบกำหนด (ตั้งค่าใน Apps Script)</div>
+      </div>
+      <div class="settings-row">
+        <label>วันที่แจ้งเตือนล่วงหน้า</label>
+        <input type="number" id="s_alertDays" min="1" max="365" value="30">
+        <div class="hint">จำนวนวันก่อนหมดอายุ (default: 30 วัน)</div>
+      </div>
+      <div class="settings-row" style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-secondary btn-sm" id="btnTestSync">ทดสอบเชื่อมต่อ</button>
+        <button class="btn btn-secondary btn-sm" id="btnPullData">ดึงข้อมูลจาก Sheets</button>
+        <button class="btn btn-secondary btn-sm" id="btnPushAll">ส่งข้อมูลขึ้น Sheets</button>
+      </div>
+      <div class="settings-row">
+        <label>จำนวนรายการในระบบ: <span id="recordCount">0</span></label>
+        <button class="btn btn-danger btn-sm" id="btnResetData" style="margin-top:8px;">⚠ รีเซ็ตข้อมูลทั้งหมด</button>
+        <div class="hint">ลบข้อมูลในเครื่องและกลับไปใช้ข้อมูลเริ่มต้น</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="btnSaveSettings">บันทึกการตั้งค่า</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast">
+  <span id="toastIcon">✓</span>
+  <span id="toastMsg">บันทึกเรียบร้อย</span>
+</div>
+
+<!-- App data and logic -->
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
