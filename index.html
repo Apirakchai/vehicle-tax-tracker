@@ -793,6 +793,186 @@
   }
   .pdf-btn-cell:hover { background: #fde68a; transform: scale(1.1); }
 
+  /* Renew period buttons */
+  .renew-period-btn {
+    padding: 12px;
+    border: 2px solid var(--border);
+    background: white;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: 'Sarabun', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--navy);
+    transition: all 0.15s;
+  }
+  .renew-period-btn:hover { border-color: var(--blue); background: var(--ivory); }
+  .renew-period-btn.active {
+    border-color: var(--green);
+    background: #dcfce7;
+    color: var(--green);
+  }
+
+  /* History items */
+  .history-item {
+    display: grid;
+    grid-template-columns: 60px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--ivory);
+    border-radius: 10px;
+    border-left: 3px solid var(--green);
+  }
+  .history-item .h-date {
+    text-align: center;
+    background: white;
+    padding: 6px 4px;
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--navy);
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .history-item .h-date .h-day {
+    display: block;
+    font-size: 14px;
+    font-family: 'Noto Serif Thai', serif;
+  }
+  .history-item .h-info {
+    font-size: 13px;
+    color: var(--navy);
+  }
+  .history-item .h-info .h-action {
+    font-weight: 600;
+  }
+  .history-item .h-info .h-meta {
+    font-size: 11px;
+    color: var(--gray);
+    margin-top: 2px;
+  }
+  .history-item .h-amount {
+    font-weight: 700;
+    color: var(--navy);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  /* File thumbnails */
+  .file-thumb {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    background: var(--ivory);
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .file-thumb:hover { border-color: var(--blue); }
+  .file-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .file-thumb .file-label {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(10, 31, 68, 0.85);
+    color: white;
+    font-size: 10px;
+    padding: 3px 6px;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .file-thumb .file-delete {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(220, 38, 38, 0.9);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .file-thumb:hover .file-delete { opacity: 1; }
+
+  /* Activity Log filters */
+  .log-filters {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr) 2fr 1fr 1fr auto;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding: 12px;
+    background: var(--ivory);
+    border-radius: 10px;
+  }
+  .log-filter-select, .log-filter-input {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: 'Sarabun', sans-serif;
+    font-size: 13px;
+    background: white;
+    color: var(--navy);
+  }
+  .log-filter-select { cursor: pointer; }
+  .log-filter-input:focus, .log-filter-select:focus {
+    outline: none;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(0, 102, 179, 0.1);
+  }
+  @media (max-width: 768px) {
+    .log-filters { grid-template-columns: 1fr 1fr; }
+    .log-filters .log-filter-input:not(.log-date) { grid-column: 1 / -1; }
+  }
+
+  /* Image Viewer */
+  .image-viewer {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.9);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 400;
+    cursor: zoom-out;
+  }
+  .image-viewer.show { display: flex; }
+  .image-viewer img {
+    max-width: 92vw;
+    max-height: 92vh;
+    object-fit: contain;
+    border-radius: 8px;
+  }
+  .image-viewer .iv-close {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: white;
+    color: var(--navy);
+    border: none;
+    cursor: pointer;
+    font-size: 22px;
+    font-weight: 700;
+  }
+
   /* Mobile responsive Dashboard */
   @media (max-width: 768px) {
     .dash-card.col-3, .dash-card.col-4, .dash-card.col-6, .dash-card.col-8 {
@@ -1017,6 +1197,8 @@
   .icon-btn:hover { transform: scale(1.1); }
   .icon-edit { background: #dbeafe; color: var(--blue); }
   .icon-edit:hover { background: #bfdbfe; }
+  .icon-renew { background: #dcfce7; color: var(--green); }
+  .icon-renew:hover { background: #bbf7d0; }
   .icon-delete { background: #fee2e2; color: var(--red); }
   .icon-delete:hover { background: #fecaca; }
   .empty-state {
@@ -1176,6 +1358,38 @@
   .sync-status.syncing .dot { background: var(--amber); animation: pulse 1.2s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
+  /* User badge */
+  .user-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px 4px 4px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+  .user-badge .avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--gold);
+    color: var(--navy);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Noto Serif Thai', serif;
+    font-weight: 700;
+    font-size: 12px;
+  }
+  .user-badge .uname {
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  @media (max-width: 768px) {
+    .user-badge .uname { display: none; }
+  }
+
   /* Settings */
   .settings-row {
     padding: 14px 0;
@@ -1240,6 +1454,11 @@
       <span class="sync-status" id="syncStatus" title="สถานะการเชื่อมต่อ Google Sheets">
         <span class="dot"></span><span id="syncText">พร้อมใช้งาน</span>
       </span>
+      <span class="user-badge" id="userBadge" title="ผู้ใช้ปัจจุบัน">
+        <span class="avatar" id="userAvatar">?</span>
+        <span class="uname" id="userName">—</span>
+      </span>
+      <button class="btn btn-ghost" id="btnActivityLog" title="ประวัติการใช้งาน">📜</button>
       <button class="btn btn-ghost" id="btnSettings" title="ตั้งค่า">⚙ <span class="txt">ตั้งค่า</span></button>
       <button class="btn btn-ghost" id="btnExport" title="ส่งออก CSV">⬇ <span class="txt">CSV</span></button>
       <button class="btn btn-primary" id="btnAdd">+ เพิ่มรายการ</button>
@@ -1538,6 +1757,33 @@
           </div>
         </div>
       </form>
+
+      <!-- History section -->
+      <div id="historySection" style="margin-top:24px; padding-top:20px; border-top:1px solid var(--border); display:none;">
+        <h3 style="font-family:'Noto Serif Thai',serif; color:var(--navy); font-size:15px; margin-bottom:12px; display:flex; align-items:center; gap:8px;">
+          <span>📜</span>
+          <span>ประวัติการต่ออายุ</span>
+          <span class="badge" id="historyBadge" style="font-family:'Sarabun',sans-serif; font-size:11px; font-weight:600; padding:3px 10px; border-radius:12px; background:var(--ivory-dark); color:var(--navy);">0 ครั้ง</span>
+        </h3>
+        <div id="historyList" style="display:flex; flex-direction:column; gap:8px;"></div>
+      </div>
+
+      <!-- Files / Documents section -->
+      <div id="filesSection" style="margin-top:20px; padding-top:20px; border-top:1px solid var(--border);">
+        <h3 style="font-family:'Noto Serif Thai',serif; color:var(--navy); font-size:15px; margin-bottom:12px; display:flex; align-items:center; gap:8px;">
+          <span>📎</span>
+          <span>เอกสารแนบ</span>
+          <span class="badge" id="filesBadge" style="font-family:'Sarabun',sans-serif; font-size:11px; font-weight:600; padding:3px 10px; border-radius:12px; background:var(--ivory-dark); color:var(--navy);">0 ไฟล์</span>
+        </h3>
+        <div style="margin-bottom:12px;">
+          <label class="btn btn-secondary btn-sm" style="cursor:pointer;">
+            📷 เพิ่มรูปเอกสาร
+            <input type="file" id="fileInput" accept="image/*" multiple style="display:none;">
+          </label>
+          <span style="font-size:12px; color:var(--gray); margin-left:8px;">รองรับหลายรูปต่อรายการ (รูปจะถูกเก็บในเครื่อง + sync ไป Google Drive)</span>
+        </div>
+        <div id="filesList" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(110px, 1fr)); gap:10px;"></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" id="btnCancel">ยกเลิก</button>
@@ -1586,6 +1832,99 @@
   </div>
 </div>
 
+<!-- Activity Log Modal -->
+<div class="modal-overlay" id="logOverlay">
+  <div class="modal" style="max-width:900px;">
+    <div class="modal-header">
+      <h2>📜 ประวัติการใช้งาน</h2>
+      <button class="modal-close" id="logClose">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px; color:var(--gray); margin-bottom:14px;">
+        บันทึกกิจกรรมจาก Google Sheets — ทุกเครื่องเห็นเหมือนกัน
+        <span id="logCount" style="font-weight:600; color:var(--navy); margin-left:8px;">—</span>
+      </p>
+
+      <!-- Filters -->
+      <div class="log-filters">
+        <select class="log-filter-select" id="logFilterUser">
+          <option value="all">ผู้ใช้ทั้งหมด</option>
+        </select>
+        <select class="log-filter-select" id="logFilterAction">
+          <option value="all">การกระทำทั้งหมด</option>
+        </select>
+        <input type="text" class="log-filter-input" id="logFilterPlate" placeholder="🔍 ค้นหาทะเบียน หรือ รายละเอียด...">
+        <input type="date" class="log-filter-input log-date" id="logFilterFrom" title="ตั้งแต่วันที่">
+        <input type="date" class="log-filter-input log-date" id="logFilterTo" title="ถึงวันที่">
+        <button class="btn btn-secondary btn-sm" id="logFilterClear">ล้างตัวกรอง</button>
+      </div>
+
+      <div id="logList" style="max-height:520px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" id="logExport">⬇ ส่งออก CSV</button>
+      <button class="btn btn-secondary btn-sm" id="logRefresh">🔄 โหลดใหม่</button>
+      <button class="btn btn-danger btn-sm" id="logClear">ล้าง local cache</button>
+      <button class="btn btn-primary" id="logCloseBtn">ปิด</button>
+    </div>
+  </div>
+</div>
+
+<!-- Renew Modal -->
+<div class="modal-overlay" id="renewOverlay">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <h2>🔄 ต่ออายุรายการ</h2>
+      <button class="modal-close" id="renewClose">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="renewInfo" style="background:var(--ivory); padding:16px; border-radius:10px; margin-bottom:18px;">
+        <div style="font-size:13px; color:var(--gray); margin-bottom:4px;">รายการที่จะต่ออายุ</div>
+        <div id="renewPlate" style="font-family:'Noto Serif Thai',serif; font-weight:700; color:var(--navy); font-size:18px;">—</div>
+        <div id="renewType" style="font-size:13px; color:var(--gray); margin-top:6px;">—</div>
+      </div>
+
+      <div class="form-field" style="margin-bottom:14px;">
+        <label>วันสิ้นสุดเดิม</label>
+        <input type="date" id="renewOldEnd" disabled style="background:#f3f4f6;">
+      </div>
+
+      <div class="form-field" style="margin-bottom:14px;">
+        <label>ระยะเวลาต่ออายุ *</label>
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
+          <button type="button" class="renew-period-btn" data-period="6m">6 เดือน</button>
+          <button type="button" class="renew-period-btn active" data-period="1y">1 ปี</button>
+          <button type="button" class="renew-period-btn" data-period="2y">2 ปี</button>
+        </div>
+      </div>
+
+      <div class="form-field" style="margin-bottom:14px;">
+        <label>วันสิ้นสุดใหม่</label>
+        <input type="date" id="renewNewEnd">
+      </div>
+
+      <div class="form-field" style="margin-bottom:14px;">
+        <label>ยอดที่ชำระจริงครั้งนี้ (บาท)</label>
+        <input type="number" id="renewAmount" step="0.01" placeholder="0.00">
+      </div>
+
+      <div class="form-field" style="margin-bottom:14px;">
+        <label>ผู้ดำเนินการ</label>
+        <input type="text" id="renewHandler" placeholder="ชื่อผู้รับผิดชอบ">
+      </div>
+
+      <div class="form-field">
+        <label>หมายเหตุ (ถ้ามี)</label>
+        <textarea id="renewNotes" placeholder="เช่น เลขที่ใบเสร็จ, ผ่อน, อัพเกรดแผน..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="renewCancel">ยกเลิก</button>
+      <button class="btn btn-primary" id="renewConfirm">✓ ต่ออายุ</button>
+    </div>
+  </div>
+</div>
+
 <!-- PDF Selection Modal -->
 <div class="modal-overlay" id="pdfOverlay">
   <div class="modal" style="max-width:560px;">
@@ -1611,6 +1950,12 @@
       <button class="btn btn-primary" id="pdfGenerate">📄 สร้าง PDF</button>
     </div>
   </div>
+</div>
+
+<!-- Image Viewer -->
+<div class="image-viewer" id="imageViewer">
+  <button class="iv-close" id="ivClose">×</button>
+  <img id="ivImage" src="" alt="">
 </div>
 
 <!-- Toast -->

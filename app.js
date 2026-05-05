@@ -24,6 +24,8 @@ let currentPage = "dashboard";
 let chartInstances = {};
 let pdfSelectedIds = new Set();
 let msMonth = null;  // {year, month} - selected month for monthly summary; null = current
+let renewingId = null;
+let renewPeriod = "1y";  // default: 1 year
 const AUTO_SYNC_INTERVAL = 30000; // 30 วินาที
 
 // Thai month names
@@ -246,6 +248,7 @@ function renderTable() {
         <td><button class="pdf-btn-cell" data-action="pdf-row" data-plate="${escapeHtml(r.plate)}" title="สร้าง PDF สำหรับคันนี้">📄</button></td>
         <td>
           <div class="actions-cell">
+            <button class="icon-btn icon-renew" data-action="renew" title="ต่ออายุ">🔄</button>
             <button class="icon-btn icon-edit" data-action="edit" title="แก้ไข">✎</button>
             <button class="icon-btn icon-delete" data-action="delete" title="ลบ">🗑</button>
           </div>
@@ -262,12 +265,505 @@ function renderTable() {
       const action = btn.dataset.action;
       if (action === 'edit') openModal(id);
       else if (action === 'delete') deleteRecord(id);
+      else if (action === 'renew') openRenewModal(id);
       else if (action === 'pdf-row') {
         const plate = btn.dataset.plate;
         generatePDFForPlates([plate]);
       }
     });
   });
+}
+
+// =========== File Attachments (IndexedDB) ===========
+const DB_NAME = "bcf_vt_files";
+const DB_STORE = "files";
+let _idbPromise = null;
+
+function openIDB() {
+  if (_idbPromise) return _idbPromise;
+  _idbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(DB_STORE)) {
+        const store = db.createObjectStore(DB_STORE, { keyPath: "id" });
+        store.createIndex("recordId", "recordId", { unique: false });
+      }
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+  return _idbPromise;
+}
+
+async function saveFile(recordId, file) {
+  const db = await openIDB();
+  const dataUrl = await new Promise((res, rej) => {
+    const reader = new FileReader();
+    reader.onload = () => res(reader.result);
+    reader.onerror = rej;
+    reader.readAsDataURL(file);
+  });
+  const id = recordId + "_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+  const entry = {
+    id,
+    recordId,
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    dataUrl,
+    uploadedAt: new Date().toISOString(),
+    uploadedBy: getCurrentUserName(),
+  };
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, "readwrite");
+    const req = tx.objectStore(DB_STORE).add(entry);
+    req.onsuccess = () => resolve(entry);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+async function getFilesForRecord(recordId) {
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, "readonly");
+    const idx = tx.objectStore(DB_STORE).index("recordId");
+    const req = idx.getAll(recordId);
+    req.onsuccess = e => resolve(e.target.result || []);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+async function deleteFile(fileId) {
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, "readwrite");
+    const req = tx.objectStore(DB_STORE).delete(fileId);
+    req.onsuccess = () => resolve();
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+async function renderFiles(rec) {
+  const list = $("filesList");
+  const badge = $("filesBadge");
+  if (!rec || !rec.id) {
+    list.innerHTML = "";
+    badge.textContent = "0 ไฟล์";
+    return;
+  }
+  try {
+    const files = await getFilesForRecord(rec.id);
+    badge.textContent = files.length + " ไฟล์";
+    if (files.length === 0) {
+      list.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--gray); font-size:12px; padding:14px;">ยังไม่มีเอกสารแนบ</div>`;
+      return;
+    }
+    list.innerHTML = files.map(f => `
+      <div class="file-thumb" data-id="${escapeHtml(f.id)}">
+        <img src="${f.dataUrl}" alt="${escapeHtml(f.name)}">
+        <button class="file-delete" data-action="del-file" data-id="${escapeHtml(f.id)}" title="ลบ">×</button>
+        <div class="file-label">${escapeHtml(f.name)}</div>
+      </div>
+    `).join("");
+
+    list.querySelectorAll(".file-thumb").forEach(el => {
+      el.addEventListener("click", e => {
+        if (e.target.closest("[data-action='del-file']")) return;
+        const id = el.dataset.id;
+        const file = files.find(x => x.id === id);
+        if (file) showImageViewer(file.dataUrl);
+      });
+    });
+    list.querySelectorAll("[data-action='del-file']").forEach(btn => {
+      btn.addEventListener("click", async e => {
+        e.stopPropagation();
+        if (!confirm("ลบรูปนี้?")) return;
+        await deleteFile(btn.dataset.id);
+        const r = records.find(x => x.id === editingId);
+        if (r) renderFiles(r);
+      });
+    });
+  } catch (e) {
+    list.innerHTML = `<div style="grid-column:1/-1; color:var(--red); font-size:12px;">โหลดไฟล์ไม่สำเร็จ: ${e.message}</div>`;
+  }
+}
+
+function showImageViewer(src) {
+  $("ivImage").src = src;
+  $("imageViewer").classList.add("show");
+}
+function hideImageViewer() {
+  $("imageViewer").classList.remove("show");
+  $("ivImage").src = "";
+}
+
+async function handleFileUpload(files) {
+  if (!editingId) {
+    showToast("กรุณาบันทึกรายการก่อนแนบรูป", "error");
+    return;
+  }
+  let success = 0, failed = 0;
+  for (const file of files) {
+    if (file.size > 5 * 1024 * 1024) {  // 5 MB limit
+      showToast(`${file.name} ใหญ่เกิน 5 MB`, "error");
+      failed++;
+      continue;
+    }
+    try {
+      await saveFile(editingId, file);
+      success++;
+    } catch (e) {
+      failed++;
+    }
+  }
+  if (success > 0) {
+    showToast(`อัปโหลด ${success} รูปแล้ว`);
+    const r = records.find(x => x.id === editingId);
+    if (r) renderFiles(r);
+  }
+  if (failed > 0) {
+    showToast(`อัปโหลดไม่สำเร็จ ${failed} ไฟล์`, "error");
+  }
+}
+
+
+function calcRenewEnd(oldEnd, period) {
+  // oldEnd: ISO date string. period: "6m" | "1y" | "2y"
+  if (!oldEnd) return "";
+  const d = new Date(oldEnd);
+  if (isNaN(d.getTime())) return "";
+  if (period === "6m") d.setMonth(d.getMonth() + 6);
+  else if (period === "1y") d.setFullYear(d.getFullYear() + 1);
+  else if (period === "2y") d.setFullYear(d.getFullYear() + 2);
+  return d.toISOString().slice(0, 10);
+}
+
+function openRenewModal(id) {
+  const r = records.find(x => x.id === id);
+  if (!r) return;
+  renewingId = id;
+  renewPeriod = "1y";
+  isModalOpen = true;
+
+  $("renewPlate").textContent = r.plate;
+  const subParts = [r.vehicle, r.owner, r.type].filter(Boolean);
+  $("renewType").textContent = subParts.join(" · ");
+  $("renewOldEnd").value = r.end || "";
+  $("renewNewEnd").value = calcRenewEnd(r.end, renewPeriod);
+  $("renewAmount").value = r.amount || "";
+  $("renewHandler").value = r.handler || "";
+  $("renewNotes").value = "";
+
+  // Reset period buttons
+  document.querySelectorAll(".renew-period-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.period === "1y");
+  });
+
+  $("renewOverlay").classList.add("show");
+}
+
+function closeRenewModal() {
+  $("renewOverlay").classList.remove("show");
+  renewingId = null;
+  isModalOpen = false;
+}
+
+function selectRenewPeriod(period) {
+  renewPeriod = period;
+  document.querySelectorAll(".renew-period-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.period === period);
+  });
+  // Update new end date based on old end
+  const oldEnd = $("renewOldEnd").value;
+  $("renewNewEnd").value = calcRenewEnd(oldEnd, period);
+}
+
+function confirmRenew() {
+  if (!renewingId) return;
+  const idx = records.findIndex(r => r.id === renewingId);
+  if (idx < 0) return;
+  const r = records[idx];
+
+  const newEnd = $("renewNewEnd").value;
+  if (!newEnd) {
+    showToast("กรุณาระบุวันสิ้นสุดใหม่", "error");
+    return;
+  }
+  const newAmount = parseFloat($("renewAmount").value) || 0;
+  const handler = $("renewHandler").value.trim();
+  const notes = $("renewNotes").value.trim();
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Record history entry before modifying
+  if (!Array.isArray(r.history)) r.history = [];
+  r.history.push({
+    date: today,
+    action: "renew",
+    period: renewPeriod,
+    oldEnd: r.end,
+    newEnd: newEnd,
+    amount: newAmount,
+    handler: handler,
+    notes: notes,
+    user: getCurrentUserName(),
+  });
+
+  // Apply renewal
+  r.start = r.end || r.start;       // start of new term = end of previous term
+  r.end = newEnd;
+  r.prevPaid = r.currPaid || r.prevPaid;
+  r.currPaid = today;
+  if (newAmount > 0) r.amount = newAmount;
+  if (handler) r.handler = handler;
+  r.payStatus = "ชำระแล้ว";
+  if (notes) r.notes = (r.notes ? r.notes + "\n" : "") + `[${today}] ${notes}`;
+
+  records[idx] = r;
+  saveRecords();
+  syncToSheets("upsert", r);
+  logActivity("renew", `ต่ออายุ ${r.plate} (${r.type}) — ${r.end}`, { plate: r.plate, type: r.type });
+  closeRenewModal();
+  renderAll();
+  showToast(`ต่ออายุ ${r.plate} เรียบร้อย — ครบกำหนดถัดไป ${fmtDate(r.end)}`);
+}
+
+// Helper used here, will be defined fully later when adding multi-user
+function getCurrentUserName() {
+  const u = sessionStorage.getItem("bcf_user_name");
+  return u || "ระบบ";
+}
+
+// Activity log
+function logActivity(action, detail, extra) {
+  // extra: { plate, type } optional structured fields for filtering
+  const ts = new Date().toISOString();
+  const id = ts + "_" + Math.random().toString(36).slice(2, 8);
+  const entry = {
+    id,
+    timestamp: ts,
+    user: getCurrentUserName(),
+    action: action || "",
+    plate: (extra && extra.plate) || "",
+    type: (extra && extra.type) || "",
+    detail: detail || "",
+  };
+  // Local cache (offline-friendly)
+  try {
+    const log = JSON.parse(localStorage.getItem("bcf_vt_log") || "[]");
+    log.push(entry);
+    if (log.length > 500) log.splice(0, log.length - 500);
+    localStorage.setItem("bcf_vt_log", JSON.stringify(log));
+  } catch (e) {}
+  // Push to Google Sheets (fire-and-forget)
+  pushLogToSheets(entry);
+}
+
+async function pushLogToSheets(entry) {
+  const settings = loadSettings();
+  if (!settings.webhookUrl) return;
+  try {
+    await fetch(settings.webhookUrl, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "logEntry", data: entry, ts: Date.now() }),
+    });
+  } catch (e) {
+    // Silent fail — entry remains in localStorage
+  }
+}
+
+async function fetchLogsFromSheets(limit) {
+  const settings = loadSettings();
+  if (!settings.webhookUrl) return null;
+  try {
+    const url = settings.webhookUrl + (settings.webhookUrl.includes("?") ? "&" : "?")
+      + "action=logs&limit=" + (limit || 500) + "&t=" + Date.now();
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    const result = await res.json();
+    if (Array.isArray(result.data)) return result.data;
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Cache logs in memory for filtering without re-fetching
+let _cachedLogs = null;
+let _logFilter = { user: "all", action: "all", plate: "", dateFrom: "", dateTo: "" };
+
+async function openLogModal() {
+  $("logOverlay").classList.add("show");
+  isModalOpen = true;
+  // Show loading state
+  $("logList").innerHTML = `<div style="text-align:center; padding:30px; color:var(--gray);">⏳ กำลังโหลดประวัติจาก Google Sheets...</div>`;
+  // Fetch from Sheets
+  const remoteLogs = await fetchLogsFromSheets(500);
+  if (remoteLogs !== null) {
+    _cachedLogs = remoteLogs;
+  } else {
+    // Fallback to localStorage
+    try {
+      const local = JSON.parse(localStorage.getItem("bcf_vt_log") || "[]");
+      // Local entries may use {ts, ...} or {timestamp, ...}; normalize
+      _cachedLogs = local.map(e => ({
+        id: e.id || (e.timestamp || e.ts) + "_local",
+        timestamp: e.timestamp || e.ts || new Date().toISOString(),
+        user: e.user || "",
+        action: e.action || "",
+        plate: e.plate || "",
+        type: e.type || "",
+        detail: e.detail || "",
+      })).reverse(); // newest first
+    } catch (e) {
+      _cachedLogs = [];
+    }
+  }
+  renderLogList();
+}
+
+function renderLogList() {
+  const list = $("logList");
+  if (!_cachedLogs) _cachedLogs = [];
+
+  // Apply filters
+  let filtered = _cachedLogs.slice();
+  if (_logFilter.user !== "all") {
+    filtered = filtered.filter(e => e.user === _logFilter.user);
+  }
+  if (_logFilter.action !== "all") {
+    filtered = filtered.filter(e => e.action === _logFilter.action);
+  }
+  if (_logFilter.plate) {
+    const q = _logFilter.plate.toLowerCase();
+    filtered = filtered.filter(e =>
+      (e.plate || "").toLowerCase().includes(q) ||
+      (e.detail || "").toLowerCase().includes(q)
+    );
+  }
+  if (_logFilter.dateFrom) {
+    filtered = filtered.filter(e => (e.timestamp || "").slice(0, 10) >= _logFilter.dateFrom);
+  }
+  if (_logFilter.dateTo) {
+    filtered = filtered.filter(e => (e.timestamp || "").slice(0, 10) <= _logFilter.dateTo);
+  }
+
+  // Update filter dropdowns with available users/actions
+  populateLogFilters();
+
+  // Render count
+  $("logCount").textContent = `${filtered.length} รายการ` + (filtered.length !== _cachedLogs.length ? ` (จากทั้งหมด ${_cachedLogs.length})` : "");
+
+  if (filtered.length === 0) {
+    list.innerHTML = `<div style="text-align:center; padding:30px; color:var(--gray);">ไม่พบกิจกรรมตามตัวกรอง</div>`;
+    return;
+  }
+
+  // Action labels
+  const actionLabels = {
+    renew: { icon: "🔄", text: "ต่ออายุ", color: "var(--green)" },
+    edit: { icon: "✎", text: "แก้ไข", color: "var(--blue)" },
+    add: { icon: "➕", text: "เพิ่ม", color: "var(--gold)" },
+    delete: { icon: "🗑", text: "ลบ", color: "var(--red)" },
+    login: { icon: "🔑", text: "ล็อกอิน", color: "var(--gray)" },
+    logout: { icon: "⏻", text: "ออกจากระบบ", color: "var(--gray)" },
+  };
+
+  list.innerHTML = filtered.map(entry => {
+    const t = new Date(entry.timestamp);
+    const isValidDate = !isNaN(t.getTime());
+    let dateStr = "—", timeStr = "";
+    if (isValidDate) {
+      dateStr = t.toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" });
+      timeStr = t.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    }
+    const a = actionLabels[entry.action] || { icon: "•", text: entry.action || "—", color: "var(--gray)" };
+    return `
+      <div class="log-entry" style="padding:12px 14px; background:var(--ivory); border-radius:10px; border-left:3px solid ${a.color};">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:4px;">
+          <div style="display:inline-flex; align-items:center; gap:6px;">
+            <span style="font-size:14px;">${a.icon}</span>
+            <span style="font-weight:600; color:${a.color}; font-size:13px;">${a.text}</span>
+            ${entry.plate ? `<span style="font-family:'Noto Serif Thai',serif; font-weight:700; color:var(--navy); font-size:13px; margin-left:4px;">${escapeHtml(entry.plate)}</span>` : ""}
+            ${entry.type ? `<span style="font-size:11px; color:var(--gray); padding:2px 8px; background:white; border-radius:8px;">${escapeHtml(entry.type)}</span>` : ""}
+          </div>
+          <div style="font-size:11px; color:var(--gray); white-space:nowrap;">
+            <span style="font-weight:600;">${dateStr}</span> · ${timeStr}
+          </div>
+        </div>
+        ${entry.detail ? `<div style="font-size:13px; color:#374151; margin-top:2px;">${escapeHtml(entry.detail)}</div>` : ""}
+        <div style="font-size:11px; color:var(--gray); margin-top:4px;">โดย <strong>${escapeHtml(entry.user || "—")}</strong></div>
+      </div>
+    `;
+  }).join("");
+}
+
+function populateLogFilters() {
+  // User filter
+  const users = new Set();
+  const actions = new Set();
+  (_cachedLogs || []).forEach(e => {
+    if (e.user) users.add(e.user);
+    if (e.action) actions.add(e.action);
+  });
+
+  const userSel = $("logFilterUser");
+  const curUser = _logFilter.user;
+  userSel.innerHTML = `<option value="all">ผู้ใช้ทั้งหมด</option>` +
+    Array.from(users).sort().map(u => `<option value="${escapeHtml(u)}" ${u === curUser ? "selected" : ""}>${escapeHtml(u)}</option>`).join("");
+
+  const actionSel = $("logFilterAction");
+  const curAction = _logFilter.action;
+  const actionLabels = { renew: "ต่ออายุ", edit: "แก้ไข", add: "เพิ่ม", delete: "ลบ", login: "ล็อกอิน", logout: "ออกจากระบบ" };
+  actionSel.innerHTML = `<option value="all">การกระทำทั้งหมด</option>` +
+    Array.from(actions).sort().map(a => `<option value="${escapeHtml(a)}" ${a === curAction ? "selected" : ""}>${actionLabels[a] || a}</option>`).join("");
+}
+
+function refreshLogs() {
+  _cachedLogs = null;
+  openLogModal();
+}
+
+function closeLogModal() {
+  $("logOverlay").classList.remove("show");
+  isModalOpen = false;
+}
+
+function clearLog() {
+  if (!confirm("ล้างประวัติในเครื่องนี้?\n(ข้อมูลใน Google Sheets ไม่ถูกลบ)")) return;
+  localStorage.removeItem("bcf_vt_log");
+  showToast("ล้างประวัติในเครื่องแล้ว");
+}
+
+function exportLogsCSV() {
+  if (!_cachedLogs || _cachedLogs.length === 0) {
+    showToast("ไม่มีข้อมูลให้ส่งออก", "error");
+    return;
+  }
+  const header = ["วันที่", "เวลา", "ผู้ใช้", "การกระทำ", "ทะเบียน", "ประเภท", "รายละเอียด"];
+  const rows = _cachedLogs.map(e => {
+    const t = new Date(e.timestamp);
+    const date = isNaN(t.getTime()) ? "" : t.toLocaleDateString("th-TH");
+    const time = isNaN(t.getTime()) ? "" : t.toLocaleTimeString("th-TH");
+    return [date, time, e.user || "", e.action || "", e.plate || "", e.type || "", e.detail || ""];
+  });
+  const escape = v => {
+    const s = String(v ?? "");
+    if (s.includes(",") || s.includes('"') || s.includes("\n")) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  };
+  const csv = "\uFEFF" + [header, ...rows].map(row => row.map(escape).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `activity-log-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+  showToast("ส่งออก CSV เรียบร้อย");
 }
 
 // =========== Modal ===========
@@ -295,13 +791,61 @@ function openModal(id) {
     $("f_handler").value = r.handler || "";
     $("f_payStatus").value = r.payStatus || "";
     $("f_notes").value = r.notes || "";
+    renderHistory(r);
+    renderFiles(r);
   } else {
     title.textContent = "เพิ่มรายการใหม่";
     $("recordForm").reset();
     $("f_category").value = "company";
     $("f_type").value = "ต่อภาษี";
+    $("historySection").style.display = "none";
+    $("filesList").innerHTML = "";
+    $("filesBadge").textContent = "0 ไฟล์";
   }
   overlay.classList.add("show");
+}
+
+function renderHistory(rec) {
+  const section = $("historySection");
+  const list = $("historyList");
+  const badge = $("historyBadge");
+  const history = Array.isArray(rec.history) ? rec.history : [];
+
+  if (history.length === 0) {
+    section.style.display = "none";
+    return;
+  }
+  section.style.display = "block";
+  badge.textContent = history.length + " ครั้ง";
+
+  // Sort newest first
+  const sorted = [...history].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  list.innerHTML = sorted.map(h => {
+    const d = new Date(h.date);
+    const day = d.getDate();
+    const month = THAI_MONTHS_SHORT[d.getMonth()];
+    const year = (d.getFullYear() + 543).toString().slice(-2);
+    const periodText = h.period === "6m" ? "6 เดือน" : h.period === "2y" ? "2 ปี" : "1 ปี";
+    const actionText = h.action === "renew" ? `ต่ออายุ ${periodText}` : (h.action || "—");
+    return `
+      <div class="history-item">
+        <div class="h-date">
+          <span class="h-day">${day}</span>
+          <span>${month} ${year}</span>
+        </div>
+        <div class="h-info">
+          <div class="h-action">${escapeHtml(actionText)}</div>
+          <div class="h-meta">
+            ${h.oldEnd ? "เดิม " + fmtDate(h.oldEnd) + " → " : ""}${h.newEnd ? "ใหม่ " + fmtDate(h.newEnd) : ""}
+            ${h.handler ? " · " + escapeHtml(h.handler) : ""}
+            ${h.user && h.user !== "ระบบ" ? " · โดย " + escapeHtml(h.user) : ""}
+          </div>
+          ${h.notes ? `<div class="h-meta" style="margin-top:4px; color:var(--navy);">"${escapeHtml(h.notes)}"</div>` : ""}
+        </div>
+        <div class="h-amount">${h.amount > 0 ? fmtMoney(h.amount) : "—"}</div>
+      </div>
+    `;
+  }).join("");
 }
 function closeModal() {
   $("modalOverlay").classList.remove("show");
@@ -333,10 +877,12 @@ function saveRecord() {
   if (editingId) {
     const idx = records.findIndex(r => r.id === editingId);
     if (idx >= 0) records[idx] = { ...records[idx], ...data };
+    logActivity("edit", `แก้ไข ${data.plate} (${data.type})`, { plate: data.plate, type: data.type });
     showToast("บันทึกการแก้ไขแล้ว");
   } else {
     data.id = `${data.category[0]}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
     records.push(data);
+    logActivity("add", `เพิ่ม ${data.plate} (${data.type})`, { plate: data.plate, type: data.type });
     showToast("เพิ่มรายการใหม่แล้ว");
   }
   saveRecords();
@@ -351,6 +897,7 @@ function deleteRecord(id) {
   records = records.filter(x => x.id !== id);
   saveRecords();
   syncToSheets("delete", { id });
+  logActivity("delete", `ลบ ${r.plate} (${r.type})`, { plate: r.plate, type: r.type });
   showToast("ลบรายการแล้ว");
   renderAll();
 }
@@ -594,7 +1141,10 @@ function resetData() {
 // =========== Logout ===========
 function logout() {
   if (!confirm("ออกจากระบบ?")) return;
+  logActivity("logout", `${getCurrentUserName()} ออกจากระบบ`);
   sessionStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem("bcf_user_name");
+  sessionStorage.removeItem("bcf_vt_logged_in");
   window.location.href = "login.html";
 }
 
@@ -1652,6 +2202,16 @@ function renderAll() {
 function init() {
   loadRecords();
 
+  // Show current user on header
+  const userName = getCurrentUserName();
+  $("userName").textContent = userName;
+  $("userAvatar").textContent = userName.charAt(0);
+  // Log first session entry once per session
+  if (!sessionStorage.getItem("bcf_vt_logged_in")) {
+    logActivity("login", `${userName} เข้าสู่ระบบ`);
+    sessionStorage.setItem("bcf_vt_logged_in", "1");
+  }
+
   // Initial sync status
   const s = loadSettings();
   if (s.webhookUrl) setSyncStatus("ok", "พร้อมใช้งาน");
@@ -1703,6 +2263,59 @@ function init() {
   $("pdfSelectUrgent").addEventListener("click", pdfSelectUrgentPlates);
   $("pdfOverlay").addEventListener("click", e => {
     if (e.target.id === "pdfOverlay") closePdfModal();
+  });
+
+  // Renew modal
+  $("renewClose").addEventListener("click", closeRenewModal);
+  $("renewCancel").addEventListener("click", closeRenewModal);
+  $("renewConfirm").addEventListener("click", confirmRenew);
+  document.querySelectorAll(".renew-period-btn").forEach(btn => {
+    btn.addEventListener("click", () => selectRenewPeriod(btn.dataset.period));
+  });
+  $("renewOldEnd").addEventListener("change", () => {
+    $("renewNewEnd").value = calcRenewEnd($("renewOldEnd").value, renewPeriod);
+  });
+  $("renewOverlay").addEventListener("click", e => {
+    if (e.target.id === "renewOverlay") closeRenewModal();
+  });
+
+  // File upload
+  $("fileInput").addEventListener("change", e => {
+    if (e.target.files && e.target.files.length > 0) {
+      handleFileUpload(e.target.files);
+      e.target.value = "";
+    }
+  });
+
+  // Image viewer
+  $("ivClose").addEventListener("click", hideImageViewer);
+  $("imageViewer").addEventListener("click", e => {
+    if (e.target.id === "imageViewer") hideImageViewer();
+  });
+
+  // Activity log
+  $("btnActivityLog").addEventListener("click", openLogModal);
+  $("logClose").addEventListener("click", closeLogModal);
+  $("logCloseBtn").addEventListener("click", closeLogModal);
+  $("logClear").addEventListener("click", clearLog);
+  $("logRefresh").addEventListener("click", refreshLogs);
+  $("logExport").addEventListener("click", exportLogsCSV);
+  $("logFilterUser").addEventListener("change", e => { _logFilter.user = e.target.value; renderLogList(); });
+  $("logFilterAction").addEventListener("change", e => { _logFilter.action = e.target.value; renderLogList(); });
+  $("logFilterPlate").addEventListener("input", e => { _logFilter.plate = e.target.value; renderLogList(); });
+  $("logFilterFrom").addEventListener("change", e => { _logFilter.dateFrom = e.target.value; renderLogList(); });
+  $("logFilterTo").addEventListener("change", e => { _logFilter.dateTo = e.target.value; renderLogList(); });
+  $("logFilterClear").addEventListener("click", () => {
+    _logFilter = { user: "all", action: "all", plate: "", dateFrom: "", dateTo: "" };
+    $("logFilterUser").value = "all";
+    $("logFilterAction").value = "all";
+    $("logFilterPlate").value = "";
+    $("logFilterFrom").value = "";
+    $("logFilterTo").value = "";
+    renderLogList();
+  });
+  $("logOverlay").addEventListener("click", e => {
+    if (e.target.id === "logOverlay") closeLogModal();
   });
 
   // Search & filters
