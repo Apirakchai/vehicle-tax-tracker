@@ -112,7 +112,124 @@ function loadRecords() {
 function saveRecords() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
 }
-// =========== Embedded Defaults ===========
+// =========== PWA: Service Worker & Install ===========
+let _deferredInstallPrompt = null;
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  // Wait until window is loaded to avoid blocking startup
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js")
+      .then(reg => {
+        console.log("[PWA] Service worker registered");
+        // Listen for updates
+        reg.addEventListener("updatefound", () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener("statechange", () => {
+            if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+              // New version available
+              showUpdateAvailable(reg);
+            }
+          });
+        });
+      })
+      .catch(err => console.warn("[PWA] SW registration failed:", err));
+  });
+}
+
+function showUpdateAvailable(reg) {
+  // Show update toast — user can tap to reload
+  const toast = document.createElement("div");
+  toast.style.cssText = `
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--navy); color: white; padding: 14px 20px; border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3); z-index: 9999;
+    display: flex; align-items: center; gap: 14px;
+    font-family: 'Sarabun', sans-serif;
+  `;
+  toast.innerHTML = `
+    <span>🔄 มีเวอร์ชันใหม่</span>
+    <button id="reloadBtn" style="background:var(--gold); color:var(--navy); border:none; padding:6px 14px; border-radius:6px; font-weight:600; cursor:pointer;">รีโหลด</button>
+    <button id="dismissUpdate" style="background:transparent; color:white; border:none; cursor:pointer; opacity:0.7; font-size:18px;">×</button>
+  `;
+  document.body.appendChild(toast);
+  toast.querySelector("#reloadBtn").addEventListener("click", () => {
+    if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+    setTimeout(() => location.reload(), 200);
+  });
+  toast.querySelector("#dismissUpdate").addEventListener("click", () => toast.remove());
+}
+
+// Install prompt handler
+function setupInstallPrompt() {
+  window.addEventListener("beforeinstallprompt", e => {
+    e.preventDefault();
+    _deferredInstallPrompt = e;
+    showInstallButton();
+  });
+  // Hide install button after install
+  window.addEventListener("appinstalled", () => {
+    _deferredInstallPrompt = null;
+    hideInstallButton();
+    showToast("ติดตั้งแอปสำเร็จ 📱");
+    logActivity("install", "ติดตั้งเป็นแอป");
+  });
+}
+
+function showInstallButton() {
+  // Show a floating install button in bottom-right
+  if (document.getElementById("pwaInstallBtn")) return;
+  // Don't show if already running as PWA
+  if (window.matchMedia("(display-mode: standalone)").matches) return;
+  if (window.navigator.standalone) return; // iOS
+
+  const btn = document.createElement("button");
+  btn.id = "pwaInstallBtn";
+  btn.innerHTML = "📱 ติดตั้งเป็นแอป";
+  btn.style.cssText = `
+    position: fixed; bottom: 20px; right: 20px; z-index: 100;
+    background: var(--gold); color: var(--navy); border: none;
+    padding: 12px 18px; border-radius: 50px; font-family: 'Sarabun', sans-serif;
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    box-shadow: 0 6px 20px rgba(201, 169, 97, 0.4);
+    display: inline-flex; align-items: center; gap: 6px;
+    animation: bounceIn 0.5s;
+  `;
+  btn.addEventListener("click", triggerInstall);
+  document.body.appendChild(btn);
+}
+
+function hideInstallButton() {
+  const btn = document.getElementById("pwaInstallBtn");
+  if (btn) btn.remove();
+}
+
+async function triggerInstall() {
+  if (!_deferredInstallPrompt) {
+    showToast("กรุณาใช้เมนูเบราว์เซอร์เพื่อติดตั้ง", "warning");
+    return;
+  }
+  _deferredInstallPrompt.prompt();
+  const { outcome } = await _deferredInstallPrompt.userChoice;
+  if (outcome === "accepted") {
+    showToast("กำลังติดตั้ง...");
+  }
+  _deferredInstallPrompt = null;
+  hideInstallButton();
+}
+
+// Detect if running as installed PWA
+function isStandalone() {
+  return window.matchMedia("(display-mode: standalone)").matches ||
+         window.navigator.standalone === true;
+}
+
+// =========== Initialize PWA on script load ===========
+registerServiceWorker();
+setupInstallPrompt();
+
+
 // URLs ฝังไว้ในโค้ด — ทุกเครื่องที่เปิดระบบจะใช้ค่าเหล่านี้โดยอัตโนมัติ
 const DEFAULT_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbx5iWtn5oRdSaRnzRQFv1a4Fr1XVSnbKVEX0AF_1QOxJM5Bn2B5mWIwrRmeSTwYTJM/exec";
 const DEFAULT_NOTIFY_EMAIL = "bcf2546@gmail.com";

@@ -4,6 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>เข้าสู่ระบบ — Black Chicken Farm</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a1f44">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BCF Tax">
+<link rel="apple-touch-icon" href="logo.png">
+<meta name="mobile-web-app-capable" content="yes">
+
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="shortcut icon" href="favicon.ico">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -339,6 +349,44 @@
     const first = grid.querySelector(".user-card");
     if (first) first.click();
   }, 100);
+
+  // ============= PWA Service Worker =============
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js")
+        .then(() => console.log("[PWA] SW registered"))
+        .catch(err => console.warn("[PWA] SW failed:", err));
+    });
+  }
+
+  // iOS install hint (Safari ไม่มี beforeinstallprompt event)
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isStandalone = window.navigator.standalone || window.matchMedia("(display-mode: standalone)").matches;
+  if (isIOS && !isStandalone && !sessionStorage.getItem("ios_hint_shown")) {
+    setTimeout(() => {
+      const hint = document.createElement("div");
+      hint.style.cssText = `
+        position: fixed; bottom: 20px; left: 20px; right: 20px;
+        background: var(--ivory); color: var(--navy); padding: 14px 18px;
+        border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); z-index: 9999;
+        font-family: 'Sarabun', sans-serif; font-size: 13px;
+        display: flex; align-items: center; gap: 12px;
+        border: 1px solid rgba(201, 169, 97, 0.3);
+      `;
+      hint.innerHTML = `
+        <div style="flex:1;">
+          📱 <strong>ติดตั้งเป็นแอป:</strong> กดปุ่มแชร์ <span style="font-size:16px;">⎙</span>
+          แล้วเลือก <strong>"เพิ่มไปยังหน้าจอโฮม"</strong>
+        </div>
+        <button id="iosHintClose" style="background:none; border:none; cursor:pointer; font-size:18px; opacity:0.6;">×</button>
+      `;
+      document.body.appendChild(hint);
+      hint.querySelector("#iosHintClose").addEventListener("click", () => {
+        hint.remove();
+        sessionStorage.setItem("ios_hint_shown", "1");
+      });
+    }, 1500);
+  }
 </script>
 </body>
 </html>
