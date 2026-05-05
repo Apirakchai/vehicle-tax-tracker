@@ -2,7 +2,7 @@
 // Vehicle Tax Tracker — Black Chicken Farm
 // Strategy: Cache-first สำหรับ static assets, Network-first สำหรับ API/data
 
-const CACHE_VERSION = "bcf-vt-v1.0.0";
+const CACHE_VERSION = "bcf-vt-v1.1.0";
 const STATIC_CACHE = CACHE_VERSION + "-static";
 const RUNTIME_CACHE = CACHE_VERSION + "-runtime";
 
@@ -18,6 +18,11 @@ const STATIC_ASSETS = [
   "./favicon.png",
   "./favicon.ico",
   "./manifest.json",
+  "./app-icon-192.png",
+  "./app-icon-512.png",
+  "./app-icon-maskable.png",
+  "./apple-touch-icon.png",
+  "./og-image.jpg",
 ];
 
 // CDN libraries — cache แยก
