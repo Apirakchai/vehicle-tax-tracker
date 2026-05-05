@@ -70,6 +70,7 @@ const daysUntil = (iso) => {
   return Math.round((d - today) / 86400000);
 };
 const statusOf = (rec) => {
+  if (rec.suspended) return "suspended";
   const d = daysUntil(rec.end);
   if (d === null) return "ok";
   if (d < 0) return "overdue";
@@ -82,7 +83,64 @@ const statusLabel = {
   urgent: "ด่วน",
   soon: "ใกล้ครบ",
   ok: "ปกติ",
+  suspended: "ยกเว้นเตือน",
 };
+
+// Suspension helpers — ระดับ vehicle (ทั้งคัน) คือเมื่อ records ทุกอันของทะเบียนนั้น suspended
+function isVehicleSuspended(plate) {
+  const recs = records.filter(r => r.plate === plate);
+  if (recs.length === 0) return false;
+  return recs.every(r => r.suspended === true);
+}
+
+function suspendWholeVehicle(plate, suspended) {
+  const targets = records.filter(r => r.plate === plate);
+  if (targets.length === 0) return 0;
+  targets.forEach(r => {
+    r.suspended = !!suspended;
+  });
+  saveRecords();
+  // Sync each record to Sheets
+  targets.forEach(r => syncToSheets("upsert", r));
+  logActivity(suspended ? "suspend" : "unsuspend",
+    (suspended ? "ระงับเตือนทั้งคัน " : "เปิดเตือนทั้งคัน ") + plate + " (" + targets.length + " รายการ)",
+    { plate });
+  return targets.length;
+}
+
+// Toggle ระงับเฉพาะรายการเดียว (record-level)
+function toggleSuspend(id) {
+  const idx = records.findIndex(r => r.id === id);
+  if (idx < 0) return;
+  const r = records[idx];
+  const willSuspend = !r.suspended;
+
+  // ถามว่าจะระงับทั้งคันหรือเฉพาะรายการนี้
+  if (willSuspend) {
+    const otherRecs = records.filter(x => x.plate === r.plate && x.id !== id);
+    if (otherRecs.length > 0) {
+      const choice = confirm(
+        `ระงับเตือน "${r.plate} - ${r.type}"?\n\n` +
+        `กด OK = ระงับเฉพาะรายการนี้\n` +
+        `กด Cancel = ยกเลิก (ถ้าต้องการระงับทั้งคัน ${r.plate} ใช้ปุ่ม "ระงับทั้งคัน" ในหน้าแก้ไข)`
+      );
+      if (!choice) return;
+    } else {
+      if (!confirm(`ระงับเตือน "${r.plate} - ${r.type}"?`)) return;
+    }
+  } else {
+    if (!confirm(`เปิดเตือน "${r.plate} - ${r.type}" อีกครั้ง?`)) return;
+  }
+
+  r.suspended = willSuspend;
+  saveRecords();
+  syncToSheets("upsert", r);
+  logActivity(willSuspend ? "suspend" : "unsuspend",
+    (willSuspend ? "ระงับเตือน " : "เปิดเตือน ") + r.plate + " (" + r.type + ")",
+    { plate: r.plate, type: r.type });
+  renderAll();
+  showToast(willSuspend ? `🔕 ระงับเตือน ${r.plate} (${r.type})` : `🔔 เปิดเตือน ${r.plate} (${r.type})`);
+}
 const typeBadge = (t) => {
   if (t === "ต่อภาษี") return `<span class="type-badge type-tax">ต่อภาษี</span>`;
   if (t === "พ.ร.บ.") return `<span class="type-badge type-prb">พ.ร.บ.</span>`;
@@ -253,7 +311,7 @@ function saveSettings(s) {
 function renderStats() {
   const box = $("statsBox");
   const total = records.length;
-  const byStatus = { overdue: 0, urgent: 0, soon: 0, ok: 0 };
+  const byStatus = { overdue: 0, urgent: 0, soon: 0, ok: 0, suspended: 0 };
   let totalDue30 = 0;
   records.forEach(r => {
     const s = statusOf(r);
@@ -262,11 +320,20 @@ function renderStats() {
       totalDue30 += Number(r.amount) || 0;
     }
   });
+  // Total active records (not suspended) for "all" count
+  const activeTotal = total - byStatus.suspended;
+  const suspendedHtml = byStatus.suspended > 0
+    ? `<div class="stat-card" style="border-left-color: var(--gray);">
+         <div class="stat-label">ยกเว้นเตือน</div>
+         <div class="stat-value" style="color: var(--gray);">${byStatus.suspended}</div>
+         <div class="stat-sub">ระงับการแจ้งเตือน</div>
+       </div>`
+    : "";
   box.innerHTML = `
     <div class="stat-card">
       <div class="stat-label">รายการทั้งหมด</div>
       <div class="stat-value">${total}</div>
-      <div class="stat-sub">รถ ${new Set(records.map(r => r.plate)).size} คัน</div>
+      <div class="stat-sub">รถ ${new Set(records.map(r => r.plate)).size} คัน${byStatus.suspended > 0 ? ` · ใช้งาน ${activeTotal}` : ""}</div>
     </div>
     <div class="stat-card danger">
       <div class="stat-label">เลยกำหนด</div>
@@ -283,6 +350,7 @@ function renderStats() {
       <div class="stat-value">${byStatus.soon}</div>
       <div class="stat-sub">เตรียมตัวล่วงหน้า</div>
     </div>
+    ${suspendedHtml}
   `;
 }
 
@@ -348,10 +416,11 @@ function renderTable() {
       d === 0 ? `วันนี้` :
       `${d} วัน`;
     const subLine = [r.vehicle, r.owner].filter(Boolean).join(" · ");
+    const suspendedBadge = r.suspended ? `<span class="suspend-badge" title="ระงับการแจ้งเตือน">🔕 ยกเว้น</span>` : "";
     return `
-      <tr data-id="${escapeHtml(r.id)}">
+      <tr data-id="${escapeHtml(r.id)}" class="${r.suspended ? 'row-suspended' : ''}">
         <td>
-          <div class="plate">${escapeHtml(r.plate)}</div>
+          <div class="plate">${escapeHtml(r.plate)} ${suspendedBadge}</div>
           ${subLine ? `<div style="font-size:12px; color:#6b7280; margin-top:4px;">${escapeHtml(subLine)}</div>` : ""}
         </td>
         <td>${typeBadge(r.type)}</td>
@@ -365,6 +434,7 @@ function renderTable() {
         <td><button class="pdf-btn-cell" data-action="pdf-row" data-plate="${escapeHtml(r.plate)}" title="สร้าง PDF สำหรับคันนี้">📄</button></td>
         <td>
           <div class="actions-cell">
+            <button class="icon-btn icon-suspend" data-action="toggle-suspend" title="${r.suspended ? 'เปิดเตือน' : 'ระงับเตือน'}">${r.suspended ? '🔔' : '🔕'}</button>
             <button class="icon-btn icon-renew" data-action="renew" title="ต่ออายุ">🔄</button>
             <button class="icon-btn icon-edit" data-action="edit" title="แก้ไข">✎</button>
             <button class="icon-btn icon-delete" data-action="delete" title="ลบ">🗑</button>
@@ -383,6 +453,7 @@ function renderTable() {
       if (action === 'edit') openModal(id);
       else if (action === 'delete') deleteRecord(id);
       else if (action === 'renew') openRenewModal(id);
+      else if (action === 'toggle-suspend') toggleSuspend(id);
       else if (action === 'pdf-row') {
         const plate = btn.dataset.plate;
         generatePDFForPlates([plate]);
@@ -1143,16 +1214,51 @@ function openModal(id) {
     $("f_notes").value = r.notes || "";
     renderHistory(r);
     renderFiles(r);
+    renderSuspendSection(r);
   } else {
     title.textContent = "เพิ่มรายการใหม่";
     $("recordForm").reset();
     $("f_category").value = "company";
     $("f_type").value = "ต่อภาษี";
     $("historySection").style.display = "none";
+    $("suspendSection").style.display = "none";
     $("filesList").innerHTML = "";
     $("filesBadge").textContent = "0 ไฟล์";
   }
   overlay.classList.add("show");
+}
+
+function renderSuspendSection(rec) {
+  const section = $("suspendSection");
+  if (!rec || !rec.id) {
+    section.style.display = "none";
+    return;
+  }
+  section.style.display = "block";
+
+  const isThisSuspended = rec.suspended === true;
+  const allRecsForVehicle = records.filter(r => r.plate === rec.plate);
+  const suspendedCount = allRecsForVehicle.filter(r => r.suspended).length;
+  const totalCount = allRecsForVehicle.length;
+  const isVehicleAllSuspended = totalCount > 0 && suspendedCount === totalCount;
+
+  $("suspendThisLabel").textContent = isThisSuspended
+    ? "🔔 เปิดเตือนรายการนี้"
+    : "🔕 ระงับเฉพาะรายการนี้";
+
+  $("suspendVehicleLabel").textContent = isVehicleAllSuspended
+    ? `🔔 เปิดเตือนทั้งคัน (${rec.plate})`
+    : `🔕 ระงับทั้งคัน (${rec.plate} · ${totalCount} รายการ)`;
+
+  // Status message
+  const msg = $("suspendStatusMsg");
+  if (isVehicleAllSuspended) {
+    msg.innerHTML = `<span style="color:var(--gray);">📊 รถคันนี้ถูกระงับทุกรายการ (${totalCount}/${totalCount})</span>`;
+  } else if (suspendedCount > 0) {
+    msg.innerHTML = `<span style="color:var(--gray);">📊 รถคันนี้ระงับ ${suspendedCount} จาก ${totalCount} รายการ</span>`;
+  } else {
+    msg.innerHTML = `<span style="color:var(--gray);">📊 รถคันนี้แจ้งเตือนปกติทุกรายการ</span>`;
+  }
 }
 
 function renderHistory(rec) {
@@ -2627,6 +2733,35 @@ function init() {
   });
   $("renewOverlay").addEventListener("click", e => {
     if (e.target.id === "renewOverlay") closeRenewModal();
+  });
+
+  // Suspend buttons in edit modal
+  $("btnToggleSuspendThis").addEventListener("click", () => {
+    if (!editingId) return;
+    toggleSuspend(editingId);
+    // Re-render suspend section based on updated state
+    const r = records.find(x => x.id === editingId);
+    if (r) renderSuspendSection(r);
+  });
+  $("btnToggleSuspendVehicle").addEventListener("click", () => {
+    if (!editingId) return;
+    const r = records.find(x => x.id === editingId);
+    if (!r) return;
+    const allRecsForVehicle = records.filter(x => x.plate === r.plate);
+    const allSuspended = allRecsForVehicle.length > 0 && allRecsForVehicle.every(x => x.suspended);
+    const willSuspend = !allSuspended;
+    const msg = willSuspend
+      ? `ระงับเตือน "${r.plate}" ทั้งคัน?\n\nจะระงับ ${allRecsForVehicle.length} รายการ — ภาษี/ประกัน/พ.ร.บ. ทั้งหมด`
+      : `เปิดเตือน "${r.plate}" ทั้งคันอีกครั้ง?\n\nจะเปิด ${allRecsForVehicle.length} รายการ`;
+    if (!confirm(msg)) return;
+    const count = suspendWholeVehicle(r.plate, willSuspend);
+    renderAll();
+    showToast(willSuspend
+      ? `🔕 ระงับ ${r.plate} ทั้งคัน (${count} รายการ)`
+      : `🔔 เปิดเตือน ${r.plate} ทั้งคัน (${count} รายการ)`);
+    // Update modal display
+    const updatedR = records.find(x => x.id === editingId);
+    if (updatedR) renderSuspendSection(updatedR);
   });
 
   // File upload
