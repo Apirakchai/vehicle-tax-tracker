@@ -607,6 +607,222 @@ async function fetchLogsFromSheets(limit) {
   }
 }
 
+// =========== Backup & Restore ===========
+async function fetchBackupList() {
+  const settings = loadSettings();
+  if (!settings.webhookUrl) return [];
+  try {
+    const url = settings.webhookUrl + (settings.webhookUrl.includes("?") ? "&" : "?")
+      + "action=backups&t=" + Date.now();
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return [];
+    const result = await res.json();
+    return Array.isArray(result.data) ? result.data : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+async function fetchBackupData(backupName) {
+  const settings = loadSettings();
+  if (!settings.webhookUrl) return null;
+  try {
+    const url = settings.webhookUrl + (settings.webhookUrl.includes("?") ? "&" : "?")
+      + "action=backupData&name=" + encodeURIComponent(backupName) + "&t=" + Date.now();
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    const result = await res.json();
+    return Array.isArray(result.data) ? result.data : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function triggerCreateBackup() {
+  const settings = loadSettings();
+  if (!settings.webhookUrl) {
+    showToast("กรุณาตั้งค่า Web App URL", "error");
+    return false;
+  }
+  try {
+    await fetch(settings.webhookUrl, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "createBackup", ts: Date.now() }),
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function triggerRestoreBackup(backupName) {
+  const settings = loadSettings();
+  if (!settings.webhookUrl) return false;
+  try {
+    await fetch(settings.webhookUrl, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "restoreBackup", data: { backupName }, ts: Date.now() }),
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+let _selectedBackup = null;
+
+async function openBackupModal() {
+  $("backupOverlay").classList.add("show");
+  isModalOpen = true;
+  const list = $("backupList");
+  list.innerHTML = `<div style="text-align:center; padding:30px; color:var(--gray);">⏳ กำลังโหลดรายการ backup...</div>`;
+  $("backupPreview").innerHTML = "";
+  $("backupRestoreBtn").disabled = true;
+  _selectedBackup = null;
+
+  const backups = await fetchBackupList();
+  if (backups.length === 0) {
+    list.innerHTML = `<div style="text-align:center; padding:30px; color:var(--gray);">
+      <div style="font-size:32px; margin-bottom:10px;">📭</div>
+      <div>ยังไม่มี backup</div>
+      <div style="font-size:12px; margin-top:6px;">ระบบจะสร้าง backup อัตโนมัติทุกเที่ยงคืน หรือกดปุ่ม "สร้าง backup ทันที" ด้านล่าง</div>
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = backups.map(b => {
+    const d = new Date(b.date + "T00:00:00");
+    const dateStr = d.toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
+    const isToday = b.date === new Date().toISOString().slice(0, 10);
+    return `
+      <div class="backup-item" data-name="${escapeHtml(b.name)}" data-count="${b.recordCount}">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div class="backup-date-pill">
+            <div style="font-size:18px; font-weight:700;">${d.getDate()}</div>
+            <div style="font-size:10px; opacity:0.85;">${["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."][d.getMonth()]}</div>
+          </div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; color:var(--navy); font-size:14px;">
+              ${dateStr}
+              ${isToday ? '<span style="font-size:11px; padding:2px 8px; border-radius:10px; background:var(--green); color:white; margin-left:6px;">วันนี้</span>' : ""}
+            </div>
+            <div style="font-size:12px; color:var(--gray); margin-top:2px;">
+              ${b.recordCount} รายการ · บันทึกเมื่อ ${escapeHtml(b.createdAt)}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  list.querySelectorAll(".backup-item").forEach(el => {
+    el.addEventListener("click", () => selectBackup(el.dataset.name));
+  });
+}
+
+async function selectBackup(name) {
+  _selectedBackup = name;
+  document.querySelectorAll(".backup-item").forEach(el => {
+    el.classList.toggle("selected", el.dataset.name === name);
+  });
+  const preview = $("backupPreview");
+  preview.innerHTML = `<div style="padding:14px; text-align:center; color:var(--gray);">⏳ โหลดข้อมูล...</div>`;
+  $("backupRestoreBtn").disabled = true;
+
+  const data = await fetchBackupData(name);
+  if (!data) {
+    preview.innerHTML = `<div style="padding:14px; text-align:center; color:var(--red);">โหลดไม่สำเร็จ</div>`;
+    return;
+  }
+
+  // Compare with current
+  const currentCount = records.length;
+  const backupCount = data.length;
+  const diff = backupCount - currentCount;
+  const diffText = diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : "เท่ากัน";
+  const diffColor = diff > 0 ? "var(--green)" : diff < 0 ? "var(--red)" : "var(--gray)";
+
+  // Group by category
+  const byCategory = {};
+  data.forEach(r => {
+    const cat = r.category === "company" ? "บริษัท" : "ส่วนตัว";
+    byCategory[cat] = (byCategory[cat] || 0) + 1;
+  });
+
+  preview.innerHTML = `
+    <div style="padding:14px; background:white; border-radius:10px;">
+      <div style="font-weight:600; color:var(--navy); margin-bottom:10px;">ตัวอย่างข้อมูล Backup</div>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:12px;">
+        <div style="text-align:center; padding:10px; background:var(--ivory); border-radius:8px;">
+          <div style="font-size:11px; color:var(--gray);">รายการใน backup</div>
+          <div style="font-size:22px; font-weight:700; color:var(--navy);">${backupCount}</div>
+        </div>
+        <div style="text-align:center; padding:10px; background:var(--ivory); border-radius:8px;">
+          <div style="font-size:11px; color:var(--gray);">รายการปัจจุบัน</div>
+          <div style="font-size:22px; font-weight:700; color:var(--navy);">${currentCount}</div>
+        </div>
+        <div style="text-align:center; padding:10px; background:var(--ivory); border-radius:8px;">
+          <div style="font-size:11px; color:var(--gray);">ผลต่าง</div>
+          <div style="font-size:22px; font-weight:700; color:${diffColor};">${diffText}</div>
+        </div>
+      </div>
+      <div style="font-size:13px; color:var(--gray);">
+        ${Object.entries(byCategory).map(([k, v]) => `<span style="margin-right:14px;">📁 ${k}: <strong style="color:var(--navy);">${v}</strong></span>`).join("")}
+      </div>
+      ${diff !== 0 ? `<div style="font-size:12px; color:${diff < 0 ? 'var(--red)' : 'var(--amber)'}; margin-top:10px; padding:8px; background:${diff < 0 ? '#fef2f2' : '#fffbeb'}; border-radius:6px;">
+        ⚠️ ${diff < 0 ? `กู้คืนจะทำให้ <strong>หาย ${Math.abs(diff)} รายการ</strong>` : `กู้คืนจะ <strong>เพิ่ม ${diff} รายการ</strong>`} จากปัจจุบัน
+      </div>` : ""}
+    </div>
+  `;
+  $("backupRestoreBtn").disabled = false;
+}
+
+function closeBackupModal() {
+  $("backupOverlay").classList.remove("show");
+  isModalOpen = false;
+  _selectedBackup = null;
+}
+
+async function confirmRestore() {
+  if (!_selectedBackup) return;
+  const confirmed = confirm(
+    `ยืนยันกู้คืนข้อมูลจาก backup:\n${_selectedBackup}\n\n` +
+    `⚠️ ข้อมูลปัจจุบันจะถูกแทนที่ทั้งหมด\n` +
+    `(ระบบจะสร้าง safety backup ก่อนกู้คืน — กลับคืนได้)`
+  );
+  if (!confirmed) return;
+
+  showToast("กำลังกู้คืน...", "warning");
+  const ok = await triggerRestoreBackup(_selectedBackup);
+  if (!ok) {
+    showToast("กู้คืนไม่สำเร็จ", "error");
+    return;
+  }
+  // Wait for sheet update, then re-fetch data
+  await new Promise(r => setTimeout(r, 2500));
+  await autoPullFromSheets();
+  closeBackupModal();
+  logActivity("restore", `กู้คืนข้อมูลจาก ${_selectedBackup}`);
+  showToast(`กู้คืนเรียบร้อย — โหลด ${records.length} รายการ`);
+}
+
+async function manualBackup() {
+  if (!confirm("สร้าง backup ทันที?\n(สามารถกู้คืนข้อมูลปัจจุบันได้ในอนาคต)")) return;
+  showToast("กำลังสร้าง backup...", "warning");
+  const ok = await triggerCreateBackup();
+  if (ok) {
+    await new Promise(r => setTimeout(r, 2000));
+    showToast("สร้าง backup เรียบร้อย");
+    openBackupModal(); // refresh list
+  } else {
+    showToast("สร้าง backup ไม่สำเร็จ", "error");
+  }
+}
+
 // Cache logs in memory for filtering without re-fetching
 let _cachedLogs = null;
 let _logFilter = { user: "all", action: "all", plate: "", dateFrom: "", dateTo: "" };
@@ -2333,6 +2549,16 @@ function init() {
   });
   $("logOverlay").addEventListener("click", e => {
     if (e.target.id === "logOverlay") closeLogModal();
+  });
+
+  // Backup & Restore
+  $("btnBackup").addEventListener("click", openBackupModal);
+  $("backupClose").addEventListener("click", closeBackupModal);
+  $("backupCancelBtn").addEventListener("click", closeBackupModal);
+  $("backupRestoreBtn").addEventListener("click", confirmRestore);
+  $("backupManualBtn").addEventListener("click", manualBackup);
+  $("backupOverlay").addEventListener("click", e => {
+    if (e.target.id === "backupOverlay") closeBackupModal();
   });
 
   // Search & filters

@@ -910,6 +910,42 @@
   }
   .file-thumb:hover .file-delete { opacity: 1; }
 
+  /* Backup items */
+  .backup-item {
+    padding: 12px 14px;
+    background: white;
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .backup-item:hover { border-color: var(--blue); }
+  .backup-item.selected {
+    border-color: var(--blue);
+    background: linear-gradient(135deg, #f0f7ff 0%, #e0eeff 100%);
+    box-shadow: 0 4px 12px rgba(0, 102, 179, 0.15);
+  }
+  .backup-date-pill {
+    width: 50px;
+    text-align: center;
+    padding: 6px 4px;
+    background: var(--navy);
+    color: white;
+    border-radius: 8px;
+    font-family: 'Noto Serif Thai', serif;
+    line-height: 1.2;
+    flex-shrink: 0;
+  }
+  .backup-item.selected .backup-date-pill {
+    background: var(--blue);
+  }
+
+  @media (max-width: 768px) {
+    #backupOverlay .modal-body > div {
+      grid-template-columns: 1fr !important;
+    }
+  }
+
   /* Activity Log filters */
   .log-filters {
     display: grid;
@@ -1459,6 +1495,7 @@
         <span class="uname" id="userName">—</span>
       </span>
       <button class="btn btn-ghost" id="btnActivityLog" title="ประวัติการใช้งาน">📜</button>
+      <button class="btn btn-ghost" id="btnBackup" title="กู้คืนข้อมูล / Backup">💾</button>
       <button class="btn btn-ghost" id="btnSettings" title="ตั้งค่า">⚙ <span class="txt">ตั้งค่า</span></button>
       <button class="btn btn-ghost" id="btnExport" title="ส่งออก CSV">⬇ <span class="txt">CSV</span></button>
       <button class="btn btn-primary" id="btnAdd">+ เพิ่มรายการ</button>
@@ -1828,6 +1865,45 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-primary" id="btnSaveSettings">บันทึกการตั้งค่า</button>
+    </div>
+  </div>
+</div>
+
+<!-- Backup & Restore Modal -->
+<div class="modal-overlay" id="backupOverlay">
+  <div class="modal" style="max-width:780px;">
+    <div class="modal-header">
+      <h2>💾 กู้คืนข้อมูล (Backup & Restore)</h2>
+      <button class="modal-close" id="backupClose">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px; color:var(--gray); margin-bottom:14px;">
+        ระบบสร้าง backup อัตโนมัติทุกเที่ยงคืน เก็บไว้ 30 วันล่าสุด
+        เลือกวันที่ต้องการกู้คืนจากรายการด้านล่าง ระบบจะสร้าง safety backup ก่อนกู้คืนเสมอ
+      </p>
+
+      <div style="display:grid; grid-template-columns: 320px 1fr; gap:16px;">
+        <!-- List of backups -->
+        <div>
+          <div style="font-size:13px; font-weight:600; color:var(--navy); margin-bottom:8px;">📅 รายการ Backup</div>
+          <div id="backupList" style="display:flex; flex-direction:column; gap:6px; max-height:480px; overflow-y:auto; padding:4px;"></div>
+        </div>
+
+        <!-- Preview area -->
+        <div>
+          <div style="font-size:13px; font-weight:600; color:var(--navy); margin-bottom:8px;">🔍 ตัวอย่าง</div>
+          <div id="backupPreview" style="background:var(--ivory); border-radius:10px; min-height:120px;">
+            <div style="padding:30px 14px; text-align:center; color:var(--gray); font-size:13px;">
+              👈 เลือก backup จากรายการ
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" id="backupManualBtn">📥 สร้าง backup ทันที</button>
+      <button class="btn btn-secondary" id="backupCancelBtn">ปิด</button>
+      <button class="btn btn-primary" id="backupRestoreBtn" disabled>↶ กู้คืนข้อมูล</button>
     </div>
   </div>
 </div>
