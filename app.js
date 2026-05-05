@@ -110,10 +110,21 @@ function loadRecords() {
 function saveRecords() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
 }
+// =========== Embedded Defaults ===========
+// URLs ฝังไว้ในโค้ด — ทุกเครื่องที่เปิดระบบจะใช้ค่าเหล่านี้โดยอัตโนมัติ
+const DEFAULT_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbx5iWtn5oRdSaRnzRQFv1a4Fr1XVSnbKVEX0AF_1QOxJM5Bn2B5mWIwrRmeSTwYTJM/exec";
+const DEFAULT_NOTIFY_EMAIL = "bcf2546@gmail.com";
+
 function loadSettings() {
+  let s = {};
   try {
-    return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-  } catch (e) { return {}; }
+    s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+  } catch (e) { s = {}; }
+  // Apply defaults for any missing fields
+  if (!s.webhookUrl) s.webhookUrl = DEFAULT_WEBHOOK_URL;
+  if (!s.email) s.email = DEFAULT_NOTIFY_EMAIL;
+  if (!s.alertDays) s.alertDays = 30;
+  return s;
 }
 function saveSettings(s) {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
