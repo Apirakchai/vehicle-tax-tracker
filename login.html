@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>เข้าสู่ระบบ — Black Chicken Farm</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="shortcut icon" href="favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0a1f44;
+    --navy-light: #14305c;
+    --gold: #c9a961;
+    --gold-light: #e0c585;
+    --ivory: #f7f4ec;
+    --ivory-dark: #ede8db;
+    --blue: #0066b3;
+    --blue-light: #1a8cd8;
+    --shadow: 0 20px 60px rgba(10, 31, 68, 0.25);
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Sarabun', sans-serif;
+    background: linear-gradient(135deg, #0a1f44 0%, #14305c 50%, #0066b3 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  body::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(201, 169, 97, 0.08) 0%, transparent 50%);
+    animation: rotate 30s linear infinite;
+    pointer-events: none;
+  }
+  @keyframes rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .login-card {
+    background: var(--ivory);
+    border-radius: var(--radius);
+    padding: 40px 36px;
+    width: 100%;
+    max-width: 440px;
+    box-shadow: var(--shadow);
+    border: 1px solid rgba(201, 169, 97, 0.3);
+    position: relative;
+    z-index: 1;
+    animation: fadeUp 0.6s ease-out;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .logo-wrap {
+    text-align: center;
+    margin-bottom: 22px;
+  }
+  .logo-wrap img {
+    width: 110px;
+    height: 110px;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 12px rgba(10, 31, 68, 0.15));
+  }
+  h1 {
+    font-family: 'Noto Serif Thai', serif;
+    color: var(--navy);
+    font-size: 24px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #6b7280;
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+  .user-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 22px;
+  }
+  .user-card {
+    padding: 14px 10px;
+    border: 2px solid #e5e7eb;
+    background: white;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+  }
+  .user-card:hover { border-color: var(--blue); }
+  .user-card.active {
+    border-color: var(--blue);
+    background: linear-gradient(135deg, #f0f7ff 0%, #e0eeff 100%);
+    box-shadow: 0 4px 12px rgba(0, 102, 179, 0.15);
+  }
+  .user-card .avatar {
+    width: 40px;
+    height: 40px;
+    margin: 0 auto 6px;
+    border-radius: 50%;
+    background: var(--ivory-dark);
+    color: var(--navy);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Noto Serif Thai', serif;
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .user-card.active .avatar { background: var(--blue); color: white; }
+  .user-card .uname {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--navy);
+  }
+  .field {
+    position: relative;
+    margin-bottom: 18px;
+  }
+  .field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--navy);
+    margin-bottom: 6px;
+  }
+  .field input {
+    width: 100%;
+    padding: 13px 16px;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    font-size: 16px;
+    font-family: 'Sarabun', sans-serif;
+    background: white;
+    transition: all 0.2s;
+    color: var(--navy);
+  }
+  .field input:focus {
+    outline: none;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 4px rgba(0, 102, 179, 0.1);
+  }
+  .toggle-pw {
+    position: absolute;
+    right: 14px;
+    top: 36px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 6px;
+    font-size: 18px;
+  }
+  button.submit {
+    width: 100%;
+    padding: 14px;
+    background: linear-gradient(135deg, var(--navy) 0%, var(--blue) 100%);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: 'Sarabun', sans-serif;
+  }
+  button.submit:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(10, 31, 68, 0.3);
+  }
+  button.submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+  .error {
+    color: #dc2626;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    margin-bottom: 14px;
+    display: none;
+    text-align: center;
+  }
+  .error.show { display: block; animation: shake 0.4s; }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+  .footer {
+    text-align: center;
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(10, 31, 68, 0.08);
+    color: #9ca3af;
+    font-size: 12px;
+  }
+  .footer .gold { color: var(--gold); font-weight: 600; }
+  .grid-section-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--navy);
+    margin-bottom: 8px;
+  }
+</style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="logo-wrap">
+      <img src="logo.png" alt="Black Chicken Farm">
+    </div>
+    <h1>ระบบจัดการภาษีรถยนต์</h1>
+    <p class="subtitle">เลือกผู้ใช้และกรอกรหัสผ่าน</p>
+
+    <div class="error" id="errorBox">รหัสผ่านไม่ถูกต้อง</div>
+
+    <div class="grid-section-label">เลือกผู้ใช้</div>
+    <div class="user-grid" id="userGrid"></div>
+
+    <div class="field">
+      <label for="pw">รหัสผ่าน</label>
+      <input type="password" id="pw" placeholder="กรอกรหัสผ่าน" autocomplete="current-password">
+      <button type="button" class="toggle-pw" id="togglePw">👁</button>
+    </div>
+
+    <button class="submit" id="loginBtn">เข้าสู่ระบบ</button>
+
+    <div class="footer">
+      <span class="gold">●</span> Sukmart Holding · Since 2003
+    </div>
+  </div>
+
+<script>
+  // ============= USER ACCOUNTS =============
+  // เพิ่ม/ลบ/แก้ไขผู้ใช้ที่นี่ (รหัสผ่านเก็บเป็น SHA-256 hash)
+  const USERS = [
+    { name: "pattama", hash: "5df4de09309fadc804326572361795c3357927c51af508219e362ea727524661" },  // pwd: 0923
+    { name: "safe",    hash: "bcddf07cbefb6d79e144759392edeb28519a4fc2acb48bcaa8b35f721e4e955d" },  // pwd: 0936
+    { name: "bcf",     hash: "1ea65ea38f2f574b3875ba895e4ff76b284b7725041612dfa0fdcc81d49e0f4f" },  // pwd: 2546
+  ];
+
+  const SESSION_KEY = "bcf_vt_auth";
+  const USER_KEY = "bcf_user_name";
+  let selectedUser = null;
+
+  async function sha256(text) {
+    const buf = new TextEncoder().encode(text);
+    const hash = await crypto.subtle.digest("SHA-256", buf);
+    return Array.from(new Uint8Array(hash))
+      .map(b => b.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  if (sessionStorage.getItem(SESSION_KEY) === "1") {
+    window.location.href = "index.html";
+  }
+
+  const grid = document.getElementById("userGrid");
+  grid.innerHTML = USERS.map((u, i) => `
+    <div class="user-card" data-idx="${i}">
+      <div class="avatar">${u.name.charAt(0)}</div>
+      <div class="uname">${u.name}</div>
+    </div>
+  `).join("");
+
+  grid.querySelectorAll(".user-card").forEach(card => {
+    card.addEventListener("click", () => {
+      grid.querySelectorAll(".user-card").forEach(c => c.classList.remove("active"));
+      card.classList.add("active");
+      selectedUser = USERS[parseInt(card.dataset.idx)];
+      document.getElementById("pw").focus();
+    });
+  });
+
+  const pwInput = document.getElementById("pw");
+  const errorBox = document.getElementById("errorBox");
+  const btn = document.getElementById("loginBtn");
+  const toggleBtn = document.getElementById("togglePw");
+
+  toggleBtn.addEventListener("click", () => {
+    if (pwInput.type === "password") { pwInput.type = "text"; toggleBtn.textContent = "🙈"; }
+    else { pwInput.type = "password"; toggleBtn.textContent = "👁"; }
+  });
+
+  async function attemptLogin() {
+    if (!selectedUser) {
+      errorBox.textContent = "กรุณาเลือกผู้ใช้";
+      errorBox.classList.add("show");
+      return;
+    }
+    const pw = pwInput.value;
+    if (!pw) {
+      errorBox.textContent = "กรุณากรอกรหัสผ่าน";
+      errorBox.classList.add("show");
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = "กำลังตรวจสอบ...";
+    const h = await sha256(pw);
+    if (h === selectedUser.hash) {
+      sessionStorage.setItem(SESSION_KEY, "1");
+      sessionStorage.setItem(USER_KEY, selectedUser.name);
+      btn.textContent = "เข้าสู่ระบบสำเร็จ ✓";
+      setTimeout(() => { window.location.href = "index.html"; }, 400);
+    } else {
+      errorBox.textContent = "รหัสผ่านไม่ถูกต้อง";
+      errorBox.classList.remove("show");
+      void errorBox.offsetWidth;
+      errorBox.classList.add("show");
+      btn.disabled = false;
+      btn.textContent = "เข้าสู่ระบบ";
+      pwInput.value = "";
+      pwInput.focus();
+    }
+  }
+
+  btn.addEventListener("click", attemptLogin);
+  pwInput.addEventListener("keydown", e => { if (e.key === "Enter") attemptLogin(); });
+
+  // Auto-select first user
+  setTimeout(() => {
+    const first = grid.querySelector(".user-card");
+    if (first) first.click();
+  }, 100);
+</script>
+</body>
+</html>
