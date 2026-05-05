@@ -274,74 +274,85 @@ function renderTable() {
   });
 }
 
-// =========== File Attachments (IndexedDB) ===========
-const DB_NAME = "bcf_vt_files";
-const DB_STORE = "files";
-let _idbPromise = null;
+// =========== File Attachments (Google Drive via Apps Script) ===========
+// รูปจะเก็บใน Google Drive folder ที่กำหนดใน Apps Script
+// metadata เก็บใน Google Sheets ทำให้ทุกเครื่องเห็นเหมือนกัน
 
-function openIDB() {
-  if (_idbPromise) return _idbPromise;
-  _idbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = e => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains(DB_STORE)) {
-        const store = db.createObjectStore(DB_STORE, { keyPath: "id" });
-        store.createIndex("recordId", "recordId", { unique: false });
-      }
-    };
-    req.onsuccess = e => resolve(e.target.result);
-    req.onerror = e => reject(e.target.error);
-  });
-  return _idbPromise;
-}
-
-async function saveFile(recordId, file) {
-  const db = await openIDB();
-  const dataUrl = await new Promise((res, rej) => {
+async function uploadFileToServer(recordId, plate, file) {
+  const settings = loadSettings();
+  if (!settings.webhookUrl) {
+    showToast("กรุณาตั้งค่า Web App URL ก่อน", "error");
+    return null;
+  }
+  // Convert file to base64
+  const dataBase64 = await new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => res(reader.result);
-    reader.onerror = rej;
+    reader.onload = () => {
+      // strip "data:image/...;base64," prefix
+      const result = reader.result;
+      const idx = result.indexOf(",");
+      resolve(idx >= 0 ? result.slice(idx + 1) : result);
+    };
+    reader.onerror = reject;
     reader.readAsDataURL(file);
   });
-  const id = recordId + "_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
-  const entry = {
-    id,
-    recordId,
-    name: file.name,
-    type: file.type,
-    size: file.size,
-    dataUrl,
-    uploadedAt: new Date().toISOString(),
-    uploadedBy: getCurrentUserName(),
-  };
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readwrite");
-    const req = tx.objectStore(DB_STORE).add(entry);
-    req.onsuccess = () => resolve(entry);
-    req.onerror = e => reject(e.target.error);
-  });
+
+  try {
+    // Apps Script needs JSON response, use POST without no-cors so we can read response
+    // But Apps Script Web Apps with text/plain trigger CORS preflight that we want to avoid
+    // Use no-cors and rely on subsequent listFiles fetch
+    await fetch(settings.webhookUrl, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: "uploadFile",
+        data: {
+          recordId,
+          plate,
+          fileName: file.name,
+          mimeType: file.type,
+          dataBase64,
+          uploadedBy: getCurrentUserName()
+        },
+        ts: Date.now()
+      }),
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
-async function getFilesForRecord(recordId) {
-  const db = await openIDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readonly");
-    const idx = tx.objectStore(DB_STORE).index("recordId");
-    const req = idx.getAll(recordId);
-    req.onsuccess = e => resolve(e.target.result || []);
-    req.onerror = e => reject(e.target.error);
-  });
+async function listFilesFromServer(recordId) {
+  const settings = loadSettings();
+  if (!settings.webhookUrl) return [];
+  try {
+    const url = settings.webhookUrl + (settings.webhookUrl.includes("?") ? "&" : "?")
+      + "action=files&recordId=" + encodeURIComponent(recordId) + "&t=" + Date.now();
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return [];
+    const result = await res.json();
+    return Array.isArray(result.data) ? result.data : [];
+  } catch (e) {
+    return [];
+  }
 }
 
-async function deleteFile(fileId) {
-  const db = await openIDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readwrite");
-    const req = tx.objectStore(DB_STORE).delete(fileId);
-    req.onsuccess = () => resolve();
-    req.onerror = e => reject(e.target.error);
-  });
+async function deleteFileFromServer(fileId) {
+  const settings = loadSettings();
+  if (!settings.webhookUrl) return false;
+  try {
+    await fetch(settings.webhookUrl, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "deleteFile", data: { id: fileId }, ts: Date.now() }),
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 async function renderFiles(rec) {
@@ -352,41 +363,44 @@ async function renderFiles(rec) {
     badge.textContent = "0 ไฟล์";
     return;
   }
-  try {
-    const files = await getFilesForRecord(rec.id);
-    badge.textContent = files.length + " ไฟล์";
-    if (files.length === 0) {
-      list.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--gray); font-size:12px; padding:14px;">ยังไม่มีเอกสารแนบ</div>`;
-      return;
-    }
-    list.innerHTML = files.map(f => `
-      <div class="file-thumb" data-id="${escapeHtml(f.id)}">
-        <img src="${f.dataUrl}" alt="${escapeHtml(f.name)}">
-        <button class="file-delete" data-action="del-file" data-id="${escapeHtml(f.id)}" title="ลบ">×</button>
-        <div class="file-label">${escapeHtml(f.name)}</div>
-      </div>
-    `).join("");
+  list.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--gray); font-size:12px; padding:14px;">⏳ กำลังโหลดเอกสารจาก Google Drive...</div>`;
+  badge.textContent = "—";
 
-    list.querySelectorAll(".file-thumb").forEach(el => {
-      el.addEventListener("click", e => {
-        if (e.target.closest("[data-action='del-file']")) return;
-        const id = el.dataset.id;
-        const file = files.find(x => x.id === id);
-        if (file) showImageViewer(file.dataUrl);
-      });
-    });
-    list.querySelectorAll("[data-action='del-file']").forEach(btn => {
-      btn.addEventListener("click", async e => {
-        e.stopPropagation();
-        if (!confirm("ลบรูปนี้?")) return;
-        await deleteFile(btn.dataset.id);
-        const r = records.find(x => x.id === editingId);
-        if (r) renderFiles(r);
-      });
-    });
-  } catch (e) {
-    list.innerHTML = `<div style="grid-column:1/-1; color:var(--red); font-size:12px;">โหลดไฟล์ไม่สำเร็จ: ${e.message}</div>`;
+  const files = await listFilesFromServer(rec.id);
+  badge.textContent = files.length + " ไฟล์";
+  if (files.length === 0) {
+    list.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--gray); font-size:12px; padding:14px;">ยังไม่มีเอกสารแนบ</div>`;
+    return;
   }
+  list.innerHTML = files.map(f => `
+    <div class="file-thumb" data-id="${escapeHtml(f.id)}" data-url="${escapeHtml(f.url)}">
+      <img src="${escapeHtml(f.thumbnail)}" alt="${escapeHtml(f.fileName)}" loading="lazy"
+           onerror="this.src='${escapeHtml(f.url)}'">
+      <button class="file-delete" data-action="del-file" data-id="${escapeHtml(f.id)}" title="ลบ">×</button>
+      <div class="file-label">${escapeHtml(f.fileName)}</div>
+    </div>
+  `).join("");
+
+  list.querySelectorAll(".file-thumb").forEach(el => {
+    el.addEventListener("click", e => {
+      if (e.target.closest("[data-action='del-file']")) return;
+      const url = el.dataset.url;
+      if (url) showImageViewer(url);
+    });
+  });
+  list.querySelectorAll("[data-action='del-file']").forEach(btn => {
+    btn.addEventListener("click", async e => {
+      e.stopPropagation();
+      if (!confirm("ลบรูปนี้? (จะถูกย้ายไป Trash ใน Google Drive)")) return;
+      btn.disabled = true;
+      await deleteFileFromServer(btn.dataset.id);
+      // Wait briefly for sheet update, then re-fetch
+      await new Promise(r => setTimeout(r, 1500));
+      const r = records.find(x => x.id === editingId);
+      if (r) renderFiles(r);
+      showToast("ลบรูปแล้ว");
+    });
+  });
 }
 
 function showImageViewer(src) {
@@ -403,24 +417,27 @@ async function handleFileUpload(files) {
     showToast("กรุณาบันทึกรายการก่อนแนบรูป", "error");
     return;
   }
+  const rec = records.find(x => x.id === editingId);
+  if (!rec) return;
+
+  showToast(`กำลังอัปโหลด ${files.length} ไฟล์ไป Google Drive...`, "warning");
+
   let success = 0, failed = 0;
   for (const file of files) {
-    if (file.size > 5 * 1024 * 1024) {  // 5 MB limit
-      showToast(`${file.name} ใหญ่เกิน 5 MB`, "error");
+    if (file.size > 10 * 1024 * 1024) {
+      showToast(`${file.name} ใหญ่เกิน 10 MB`, "error");
       failed++;
       continue;
     }
-    try {
-      await saveFile(editingId, file);
-      success++;
-    } catch (e) {
-      failed++;
-    }
+    const ok = await uploadFileToServer(rec.id, rec.plate, file);
+    if (ok) success++;
+    else failed++;
   }
   if (success > 0) {
-    showToast(`อัปโหลด ${success} รูปแล้ว`);
-    const r = records.find(x => x.id === editingId);
-    if (r) renderFiles(r);
+    showToast(`อัปโหลด ${success} ไฟล์สำเร็จ`);
+    // Wait briefly for Google Sheets to reflect new files, then refresh
+    await new Promise(r => setTimeout(r, 2000));
+    renderFiles(rec);
   }
   if (failed > 0) {
     showToast(`อัปโหลดไม่สำเร็จ ${failed} ไฟล์`, "error");
