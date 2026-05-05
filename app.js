@@ -23,7 +23,12 @@ let isModalOpen = false;
 let currentPage = "dashboard";
 let chartInstances = {};
 let pdfSelectedIds = new Set();
+let msMonth = null;  // {year, month} - selected month for monthly summary; null = current
 const AUTO_SYNC_INTERVAL = 30000; // 30 วินาที
+
+// Thai month names
+const THAI_MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+const THAI_MONTHS_SHORT = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 
 // Theme colors
 const COLORS = {
@@ -582,9 +587,448 @@ function logout() {
   window.location.href = "login.html";
 }
 
-// =========== Dashboard ===========
+// =========== Monthly Summary ===========
+// Document checklist by type and vehicle category
+function getDocumentsForRecord(rec) {
+  const docs = [];
+  const vehicle = (rec.vehicle || "").toLowerCase();
+  const isMotorcycle = vehicle.includes("มอเตอร์ไซ") || vehicle.includes("มอเตอร์ไซด์") || vehicle.includes("motorcycle");
+  const isTruck = vehicle.includes("6 ล้อ") || vehicle.includes("สิบล้อ") || vehicle.includes("ห้องเย็น") || vehicle.includes("ตู้เย็น");
+
+  if (rec.type === "ต่อภาษี") {
+    docs.push("เล่มทะเบียนรถ (สมุดสีฟ้า)");
+    docs.push("สำเนาบัตรประชาชนเจ้าของรถ");
+    docs.push("กรมธรรม์ พ.ร.บ. ที่ยังไม่หมดอายุ");
+    if (!isMotorcycle) {
+      docs.push("ใบรับรองตรวจสภาพรถ (ตรอ.) — รถอายุเกิน 7 ปี");
+    } else {
+      docs.push("ใบรับรองตรวจสภาพรถ (ตรอ.) — มอเตอร์ไซค์อายุเกิน 5 ปี");
+    }
+    if (isTruck) {
+      docs.push("ใบรับรองตรวจสภาพรถ (ตรอ.) — รถบรรทุกตรวจทุกปี");
+      docs.push("ใบ GPS ติดตามรถ (สำหรับรถบรรทุก)");
+    }
+  } else if ((rec.type || "").startsWith("ประกันภัย")) {
+    docs.push("กรมธรรม์ประกันภัยฉบับเดิม");
+    docs.push("สำเนาทะเบียนรถ");
+    docs.push("สำเนาบัตรประชาชนผู้เอาประกัน");
+    docs.push("รูปถ่ายรอบคันรถ (4 มุม)");
+    docs.push("เลขไมล์ปัจจุบัน");
+  } else if (rec.type === "พ.ร.บ.") {
+    docs.push("เล่มทะเบียนรถ หรือสำเนา");
+    docs.push("สำเนาบัตรประชาชนเจ้าของรถ");
+    docs.push("กรมธรรม์ พ.ร.บ. ฉบับเดิม (ถ้ามี)");
+  }
+  return docs;
+}
+
+function getChecklistKey(year, month, vehiclePlate, docName) {
+  // Stable storage key for checking off items
+  return `bcf_chk_${year}_${month}_${vehiclePlate}_${docName}`.replace(/\s+/g, "_");
+}
+
+function isDocChecked(year, month, plate, doc) {
+  return localStorage.getItem(getChecklistKey(year, month, plate, doc)) === "1";
+}
+
+function setDocChecked(year, month, plate, doc, checked) {
+  const key = getChecklistKey(year, month, plate, doc);
+  if (checked) localStorage.setItem(key, "1");
+  else localStorage.removeItem(key);
+}
+
+
+function getCurrentMsMonth() {
+  if (msMonth) return msMonth;
+  const today = new Date();
+  return { year: today.getFullYear(), month: today.getMonth() };
+}
+
+function setMsMonth(year, month) {
+  // Normalize month overflow (e.g., month=12 → next year jan)
+  const d = new Date(year, month, 1);
+  msMonth = { year: d.getFullYear(), month: d.getMonth() };
+  renderMonthlySummary();
+}
+
+function renderMsSelect() {
+  // Build the select options: 12 months back to 24 months forward = 36 months
+  const sel = $("ms_select");
+  const today = new Date();
+  const cur = getCurrentMsMonth();
+  const opts = [];
+  for (let offset = -12; offset <= 24; offset++) {
+    const d = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+    const y = d.getFullYear();
+    const m = d.getMonth();
+    const label = THAI_MONTHS[m] + " " + (y + 543);
+    const value = `${y}-${m}`;
+    const isCurrent = (y === cur.year && m === cur.month);
+    opts.push(`<option value="${value}" ${isCurrent ? "selected" : ""}>${label}</option>`);
+  }
+  sel.innerHTML = opts.join("");
+}
+
+function getRecordsForMonth(year, month) {
+  return records.filter(r => {
+    if (!r.end) return false;
+    const d = new Date(r.end);
+    if (isNaN(d.getTime())) return false;
+    return d.getFullYear() === year && d.getMonth() === month;
+  }).sort((a, b) => {
+    const da = new Date(a.end);
+    const db = new Date(b.end);
+    return da - db;
+  });
+}
+
+function renderMonthlySummary() {
+  const cur = getCurrentMsMonth();
+  const monthRecs = getRecordsForMonth(cur.year, cur.month);
+
+  // Update select & header
+  renderMsSelect();
+  const today = new Date();
+  const isCurrentMonth = today.getFullYear() === cur.year && today.getMonth() === cur.month;
+  $("ms_monthName").textContent = THAI_MONTHS[cur.month] + " " + (cur.year + 543) + (isCurrentMonth ? "  (เดือนนี้)" : "");
+
+  // Summary stats
+  const total = monthRecs.length;
+  const totalAmt = monthRecs.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  let taxCnt = 0, insCnt = 0, prbCnt = 0;
+  monthRecs.forEach(r => {
+    if (r.type === "ต่อภาษี") taxCnt++;
+    else if ((r.type || "").startsWith("ประกันภัย")) insCnt++;
+    else if (r.type === "พ.ร.บ.") prbCnt++;
+  });
+  $("ms_totalCount").textContent = total;
+  $("ms_totalAmount").textContent = fmtMoney(totalAmt);
+  $("ms_taxCount").textContent = taxCnt;
+  $("ms_insCount").textContent = insCnt;
+  $("ms_prbCount").textContent = prbCnt;
+
+  const list = $("ms_list");
+  if (monthRecs.length === 0) {
+    list.innerHTML = `<div class="ms-empty"><div class="big">📭</div><div>ไม่มีรายการต้องจ่ายในเดือนนี้</div></div>`;
+    return;
+  }
+
+  // Group records by plate
+  const byPlate = {};
+  monthRecs.forEach(r => {
+    if (!byPlate[r.plate]) {
+      byPlate[r.plate] = { plate: r.plate, records: [], vehicle: "", owner: "", category: r.category, totalAmount: 0, hasOverdue: false, hasUrgent: false, earliestDate: null };
+    }
+    const grp = byPlate[r.plate];
+    grp.records.push(r);
+    grp.totalAmount += Number(r.amount) || 0;
+    if (r.vehicle && !grp.vehicle) grp.vehicle = r.vehicle;
+    if (r.owner && !grp.owner) grp.owner = r.owner;
+    const status = statusOf(r);
+    if (status === "overdue") grp.hasOverdue = true;
+    if (status === "urgent") grp.hasUrgent = true;
+    const ed = new Date(r.end);
+    if (grp.earliestDate === null || ed < grp.earliestDate) grp.earliestDate = ed;
+  });
+
+  // Sort by earliest date
+  const groups = Object.values(byPlate).sort((a, b) => a.earliestDate - b.earliestDate);
+
+  list.innerHTML = groups.map(grp => {
+    const cardCls = grp.hasOverdue ? "has-overdue" : grp.hasUrgent ? "has-urgent" : "";
+    const catCls = grp.category === "personal" ? "personal" : "";
+    const catLabel = grp.category === "company" ? "บริษัท" : "ส่วนตัว";
+    const subParts = [grp.vehicle, grp.owner].filter(Boolean);
+    const meta = subParts.join(" · ");
+
+    // Records as items
+    const itemsHtml = grp.records.sort((a, b) => new Date(a.end) - new Date(b.end)).map(r => {
+      const d = new Date(r.end);
+      const day = d.getDate();
+      const monthAbbr = THAI_MONTHS_SHORT[d.getMonth()];
+      const status = statusOf(r);
+      const itemCls = status === "overdue" ? "overdue" : status === "urgent" ? "urgent" : "";
+      const statusText = status === "overdue" ? "เลยกำหนด" : status === "urgent" ? "ด่วน" : status === "soon" ? "ใกล้ครบ" : "ปกติ";
+      return `
+        <div class="ms-vc-item ${itemCls}" data-id="${escapeHtml(r.id)}">
+          <div class="vi-day">
+            <span class="vi-day-num">${day}</span>
+            <span style="font-size:10px;">${monthAbbr}</span>
+          </div>
+          <div class="vi-type">
+            <div>${escapeHtml(r.type)}</div>
+            <div class="vi-status">${escapeHtml(r.handler ? ("ผู้ดำเนินการ: " + r.handler) : "ยังไม่ระบุผู้ดำเนินการ")}</div>
+          </div>
+          <div class="vi-company">${escapeHtml(r.company || "—")}</div>
+          <div class="vi-amount">${fmtMoney(r.amount)}</div>
+          <div class="vi-status-pill"><span class="pill ${status}">${statusText}</span></div>
+        </div>
+      `;
+    }).join("");
+
+    // Build unique checklist for this vehicle (combining all docs from all records)
+    const docSet = new Set();
+    grp.records.forEach(r => {
+      getDocumentsForRecord(r).forEach(doc => docSet.add(doc));
+    });
+    const docs = Array.from(docSet);
+    const checklistHtml = docs.map((doc, i) => {
+      const checked = isDocChecked(cur.year, cur.month, grp.plate, doc);
+      return `
+        <div class="ms-vc-check-item ${checked ? "checked" : ""}">
+          <input type="checkbox" id="chk-${escapeHtml(grp.plate)}-${i}" ${checked ? "checked" : ""}
+                 data-plate="${escapeHtml(grp.plate)}" data-doc="${escapeHtml(doc)}">
+          <label for="chk-${escapeHtml(grp.plate)}-${i}">${escapeHtml(doc)}</label>
+        </div>
+      `;
+    }).join("");
+
+    return `
+      <div class="ms-vehicle-card ${cardCls}" data-plate="${escapeHtml(grp.plate)}">
+        <div class="ms-vc-header">
+          <div class="ms-vc-title">
+            <div class="ms-vc-plate">
+              ${escapeHtml(grp.plate)}
+              <span class="cat-pill ${catCls}">${catLabel}</span>
+            </div>
+            ${meta ? `<div class="ms-vc-meta">${escapeHtml(meta)}</div>` : ""}
+          </div>
+          <div class="ms-vc-actions">
+            <div class="ms-vc-total">
+              <div class="ms-vc-total-label">รวม ${grp.records.length} รายการ</div>
+              <div class="ms-vc-total-amount">${fmtMoney(grp.totalAmount)}</div>
+            </div>
+            <button class="ms-vc-pdf" data-action="ms-vc-pdf" data-plate="${escapeHtml(grp.plate)}" title="สร้าง PDF สำหรับคันนี้">📄</button>
+          </div>
+        </div>
+
+        <div class="ms-vc-items">${itemsHtml}</div>
+
+        ${docs.length > 0 ? `
+          <div class="ms-vc-checklist">
+            <div class="ms-vc-checklist-title">
+              <span class="icon">📋</span>
+              <span>เอกสารที่ต้องเตรียม</span>
+            </div>
+            <div class="ms-vc-checklist-list">${checklistHtml}</div>
+          </div>
+        ` : ""}
+      </div>
+    `;
+  }).join("");
+
+  // Click handlers
+  list.querySelectorAll(".ms-vc-item").forEach(el => {
+    el.addEventListener("click", () => {
+      const id = el.dataset.id;
+      switchPage("records");
+      setTimeout(() => openModal(id), 300);
+    });
+  });
+  list.querySelectorAll("[data-action='ms-vc-pdf']").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      const plate = btn.dataset.plate;
+      generatePDFForPlates([plate]);
+    });
+  });
+  list.querySelectorAll(".ms-vc-check-item input[type='checkbox']").forEach(cb => {
+    cb.addEventListener("change", e => {
+      e.stopPropagation();
+      const plate = cb.dataset.plate;
+      const doc = cb.dataset.doc;
+      setDocChecked(cur.year, cur.month, plate, doc, cb.checked);
+      cb.closest(".ms-vc-check-item").classList.toggle("checked", cb.checked);
+    });
+    cb.addEventListener("click", e => e.stopPropagation());
+  });
+}
+
+async function generateMonthlyChecklistPDF() {
+  if (typeof window.jspdf === "undefined") {
+    showToast("กำลังโหลดไลบรารี กรุณาลองใหม่...", "warning");
+    return;
+  }
+  const cur = getCurrentMsMonth();
+  const monthRecs = getRecordsForMonth(cur.year, cur.month);
+  if (monthRecs.length === 0) {
+    showToast("ไม่มีรายการในเดือนนี้", "error");
+    return;
+  }
+
+  // Group by plate
+  const byPlate = {};
+  monthRecs.forEach(r => {
+    if (!byPlate[r.plate]) {
+      byPlate[r.plate] = { plate: r.plate, records: [], vehicle: "", owner: "", category: r.category, totalAmount: 0 };
+    }
+    const grp = byPlate[r.plate];
+    grp.records.push(r);
+    grp.totalAmount += Number(r.amount) || 0;
+    if (r.vehicle && !grp.vehicle) grp.vehicle = r.vehicle;
+    if (r.owner && !grp.owner) grp.owner = r.owner;
+  });
+  const groups = Object.values(byPlate).sort((a, b) => {
+    const ea = Math.min(...a.records.map(r => new Date(r.end).getTime()));
+    const eb = Math.min(...b.records.map(r => new Date(r.end).getTime()));
+    return ea - eb;
+  });
+
+  const { jsPDF } = window.jspdf;
+  showToast("กำลังสร้างใบเตรียมเอกสาร...", "warning");
+
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  loadSarabunFontInPdf(doc);
+
+  // Header
+  doc.setFillColor(10, 31, 68);
+  doc.rect(0, 0, pageW, 32, "F");
+  doc.setTextColor(255);
+  doc.setFont("Sarabun", "bold");
+  doc.setFontSize(15);
+  doc.text("ใบเตรียมเอกสาร — ภาษีรถยนต์", 14, 9, { baseline: "top" });
+  doc.setFont("Sarabun", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(201, 169, 97);
+  doc.text(`ประจำเดือน: ${THAI_MONTHS[cur.month]} ${cur.year + 543}`, 14, 17, { baseline: "top" });
+  doc.setFontSize(8);
+  doc.setTextColor(220);
+  doc.text(`สร้างเมื่อ: ${new Date().toLocaleString("th-TH")}  ·  Black Chicken Farm`, 14, 25, { baseline: "top" });
+
+  // Summary stats box
+  let y = 40;
+  const totalAll = monthRecs.length;
+  const amtAll = monthRecs.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  doc.setDrawColor(230);
+  doc.setFillColor(247, 244, 236);
+  doc.roundedRect(14, y, pageW - 28, 16, 2, 2, "FD");
+  doc.setTextColor(10, 31, 68);
+  doc.setFont("Sarabun", "bold");
+  doc.setFontSize(10);
+  doc.text(`รถ ${groups.length} คัน  ·  รายการที่ต้องดำเนินการ ${totalAll} รายการ  ·  ยอดรวมประมาณ ${fmtMoney(amtAll)}`, pageW / 2, y + 10, { align: "center" });
+  y += 24;
+
+  // Per-vehicle sections
+  for (let gi = 0; gi < groups.length; gi++) {
+    const grp = groups[gi];
+    const recs = grp.records.sort((a, b) => new Date(a.end) - new Date(b.end));
+
+    // Estimate height needed
+    const docSet = new Set();
+    recs.forEach(r => getDocumentsForRecord(r).forEach(d => docSet.add(d)));
+    const docs = Array.from(docSet);
+    const estHeight = 30 + recs.length * 6 + Math.ceil(docs.length / 2) * 6 + 14;
+
+    if (y + estHeight > pageH - 20) {
+      doc.addPage();
+      y = 20;
+    }
+
+    // Vehicle header bar
+    doc.setFillColor(10, 31, 68);
+    doc.roundedRect(14, y, pageW - 28, 11, 2, 2, "F");
+    doc.setTextColor(255);
+    doc.setFont("Sarabun", "bold");
+    doc.setFontSize(11);
+    const catLabel = grp.category === "company" ? "[บริษัท]" : "[ส่วนตัว]";
+    doc.text(`${grp.plate}  ${catLabel}`, 18, y + 4, { baseline: "top" });
+    doc.setFont("Sarabun", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(201, 169, 97);
+    const sub = [grp.vehicle, grp.owner].filter(Boolean).join(" · ");
+    if (sub) {
+      doc.text(sub, pageW - 18, y + 4, { baseline: "top", align: "right" });
+    }
+    y += 13;
+
+    // List records to do
+    doc.setTextColor(60);
+    doc.setFontSize(9);
+    doc.setFont("Sarabun", "bold");
+    doc.text("รายการที่ต้องดำเนินการ:", 18, y, { baseline: "top" });
+    y += 5;
+    doc.setFont("Sarabun", "normal");
+    recs.forEach(r => {
+      const d = new Date(r.end);
+      const day = d.getDate();
+      const dueStr = `${day} ${THAI_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`;
+      const amt = Number(r.amount) > 0 ? fmtMoney(r.amount) : "—";
+      doc.setTextColor(60);
+      doc.text(`•  ${r.type}`, 22, y, { baseline: "top" });
+      doc.text(`ครบ: ${dueStr}`, 88, y, { baseline: "top" });
+      doc.text(`${r.company || "—"}`, 128, y, { baseline: "top" });
+      doc.setFont("Sarabun", "bold");
+      doc.text(amt, pageW - 18, y, { baseline: "top", align: "right" });
+      doc.setFont("Sarabun", "normal");
+      y += 5.5;
+    });
+
+    y += 2;
+
+    // Documents checklist
+    doc.setFont("Sarabun", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(10, 31, 68);
+    doc.text("เอกสารที่ต้องเตรียม:", 18, y, { baseline: "top" });
+    y += 5;
+    doc.setFont("Sarabun", "normal");
+    doc.setTextColor(60);
+    // 2-column checklist
+    const colWidth = (pageW - 36) / 2;
+    let col = 0;
+    let rowY = y;
+    docs.forEach((d) => {
+      const x = 22 + col * colWidth;
+      // Draw checkbox
+      doc.setDrawColor(120);
+      doc.setLineWidth(0.3);
+      doc.rect(x, rowY + 0.5, 3, 3);
+      // Doc text
+      doc.text(d, x + 5, rowY, { baseline: "top" });
+      col++;
+      if (col >= 2) {
+        col = 0;
+        rowY += 6;
+      }
+    });
+    if (col > 0) rowY += 6;
+    y = rowY + 4;
+
+    // Notes line
+    doc.setDrawColor(200);
+    doc.setLineWidth(0.2);
+    doc.line(18, y, pageW - 18, y);
+    doc.setFontSize(8);
+    doc.setTextColor(140);
+    doc.text("หมายเหตุ / ผู้ดำเนินการ: _________________________________", 18, y + 4, { baseline: "top" });
+    y += 12;
+  }
+
+  // Page numbers
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFont("Sarabun", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(150);
+    doc.text(`หน้า ${i} / ${pageCount}`, pageW - 20, pageH - 8, { align: "right" });
+    doc.text(`Black Chicken Farm — Sukmart Holding`, 20, pageH - 8);
+  }
+
+  const ts = new Date().toISOString().slice(0, 10);
+  const monthName = THAI_MONTHS[cur.month] + "-" + (cur.year + 543);
+  doc.save(`checklist-${monthName}-${ts}.pdf`);
+  showToast(`สร้างใบเตรียมเอกสารเรียบร้อย (${groups.length} คัน)`);
+}
+
+
 function renderDashboard() {
   if (currentPage !== "dashboard") return;
+
+  // Render monthly summary first
+  renderMonthlySummary();
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -688,12 +1132,11 @@ function renderDashboard() {
   const monthLabels = [];
   const monthTotals = [];
   const monthCounts = [];
-  const thaiMonths = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
   for (let i = 0; i < 12; i++) {
     const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
     const m = d.getMonth();
     const y = d.getFullYear();
-    monthLabels.push(thaiMonths[m] + " " + (y + 543).toString().slice(-2));
+    monthLabels.push(THAI_MONTHS_SHORT[m] + " " + (y + 543).toString().slice(-2));
     let total = 0, cnt = 0;
     records.forEach(r => {
       if (!r.end) return;
@@ -1217,6 +1660,25 @@ function init() {
   document.querySelectorAll(".page-tab").forEach(t => {
     t.addEventListener("click", () => switchPage(t.dataset.page));
   });
+
+  // Monthly Summary navigation
+  $("ms_prev").addEventListener("click", () => {
+    const cur = getCurrentMsMonth();
+    setMsMonth(cur.year, cur.month - 1);
+  });
+  $("ms_next").addEventListener("click", () => {
+    const cur = getCurrentMsMonth();
+    setMsMonth(cur.year, cur.month + 1);
+  });
+  $("ms_today").addEventListener("click", () => {
+    msMonth = null;
+    renderMonthlySummary();
+  });
+  $("ms_select").addEventListener("change", e => {
+    const [y, m] = e.target.value.split("-").map(Number);
+    setMsMonth(y, m);
+  });
+  $("ms_printChecklist").addEventListener("click", generateMonthlyChecklistPDF);
 
   // PDF
   $("btnPdfReport").addEventListener("click", openPdfModal);
