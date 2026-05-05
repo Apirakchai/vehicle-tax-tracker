@@ -1471,16 +1471,38 @@
   /* Mobile responsive */
   @media (max-width: 768px) {
     main { padding: 16px; }
-    header { padding: 14px 16px; }
+    header { padding: 12px 14px; }
+    .header-inner {
+      flex-direction: column;
+      gap: 10px;
+      align-items: stretch;
+    }
+    .brand { justify-content: center; }
     .brand-text h1 { font-size: 16px; }
     .brand-text .sub { font-size: 11px; }
     .brand img { width: 44px; height: 44px; }
+    .header-actions {
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+    }
+    .header-actions .btn { padding: 8px 12px; font-size: 13px; }
+    .header-actions .btn span.txt { display: none; }
+    .sync-status { font-size: 11px; padding: 4px 10px; }
     .form-grid { grid-template-columns: 1fr; }
     .toolbar { padding: 12px; }
     .modal { margin: 20px auto; }
     .modal-body { padding: 18px; }
     .stat-value { font-size: 24px; }
-    .header-actions .btn span.txt { display: none; }
+
+    /* Mobile table: smaller fonts + tighter padding (scrolls horizontally inside its own box) */
+    table { font-size: 12px; min-width: 900px; }
+    table th, table td { padding: 10px 8px; }
+    .plate { font-size: 14px; padding: 4px 8px; }
+    .status-pill { font-size: 10px; padding: 3px 8px; }
+    .type-pill { font-size: 10px; padding: 3px 8px; }
+    .pdf-btn-cell { width: 28px; height: 28px; font-size: 12px; }
+    .icon-btn { width: 28px; height: 28px; font-size: 13px; }
   }
 
   /* Print */
