@@ -1263,14 +1263,19 @@ function exportLogsCSV() {
 
 // =========== Modal ===========
 function openModal(id) {
-  editingId = id;
-  isModalOpen = true;
   const overlay = $("modalOverlay");
   const title = $("modalTitle");
   if (id) {
-    title.textContent = "แก้ไขรายการ";
     const r = records.find(x => x.id === id);
-    if (!r) return;
+    if (!r) {
+      // Record not found in local cache — likely id mismatch between sheets and local
+      console.error("Record not found:", id, "Available IDs:", records.map(x => x.id).slice(0, 5));
+      showToast("ไม่พบข้อมูลรายการนี้ กรุณาโหลดข้อมูลใหม่จาก Sheets (ดูใน ตั้งค่า)", "error");
+      return;  // ไม่เปิด modal เลย
+    }
+    editingId = id;
+    isModalOpen = true;
+    title.textContent = "แก้ไขรายการ";
     $("f_category").value = r.category;
     $("f_plate").value = r.plate || "";
     $("f_vehicle").value = r.vehicle || "";
@@ -1290,6 +1295,8 @@ function openModal(id) {
     renderFiles(r);
     renderSuspendSection(r);
   } else {
+    editingId = null;
+    isModalOpen = true;
     title.textContent = "เพิ่มรายการใหม่";
     $("recordForm").reset();
     $("f_category").value = "company";
@@ -1404,19 +1411,30 @@ function saveRecord() {
     showToast("กรุณากรอกทะเบียนและวันที่สิ้นสุด", "error");
     return;
   }
+  let recordToSync;
   if (editingId) {
     const idx = records.findIndex(r => r.id === editingId);
-    if (idx >= 0) records[idx] = { ...records[idx], ...data };
+    if (idx >= 0) {
+      // Merge existing record (id, suspended, history, etc) with form data
+      records[idx] = { ...records[idx], ...data };
+      recordToSync = records[idx];  // Has id and all preserved fields
+    } else {
+      // editingId set but record not found — fallback to new
+      data.id = `${data.category[0]}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
+      records.push(data);
+      recordToSync = data;
+    }
     logActivity("edit", `แก้ไข ${data.plate} (${data.type})`, { plate: data.plate, type: data.type });
     showToast("บันทึกการแก้ไขแล้ว");
   } else {
     data.id = `${data.category[0]}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
     records.push(data);
+    recordToSync = data;
     logActivity("add", `เพิ่ม ${data.plate} (${data.type})`, { plate: data.plate, type: data.type });
     showToast("เพิ่มรายการใหม่แล้ว");
   }
   saveRecords();
-  syncToSheets("upsert", data);
+  syncToSheets("upsert", recordToSync);
   closeModal();
   renderAll();
 }

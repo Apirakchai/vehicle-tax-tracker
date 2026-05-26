@@ -176,6 +176,13 @@ function findRowById(sh, id) {
 
 function upsertRecord(rec) {
   const sh = getSheet();
+  // Safety: หาก record ไม่มี id (อาจเกิดจาก client-side bug หรือ data corruption)
+  // generate id ใหม่เพื่อไม่ให้ data หายไป
+  if (!rec.id) {
+    const cat = (rec.category || "u")[0];
+    rec.id = cat + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
+    Logger.log("upsertRecord: generated new id for record missing id: " + rec.id);
+  }
   const rowData = recordToRow(rec);
   const existingRow = findRowById(sh, rec.id);
   if (existingRow > 0) {
