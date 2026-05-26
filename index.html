@@ -1447,6 +1447,36 @@
     100% { transform: scale(1); }
   }
 
+  /* Toggle Switch */
+  .toggle-switch {
+    width: 56px;
+    height: 30px;
+    background: #d1d5db;
+    border-radius: 30px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.25s;
+    flex-shrink: 0;
+  }
+  .toggle-switch.on {
+    background: var(--green);
+  }
+  .toggle-switch .toggle-knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 24px;
+    height: 24px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.25s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  }
+  .toggle-switch.on .toggle-knob {
+    transform: translateX(26px);
+  }
+  .toggle-switch:hover { opacity: 0.9; }
+
   /* User badge */
   .user-badge {
     display: inline-flex;
@@ -1933,6 +1963,25 @@
       <button class="modal-close" id="settingsClose">×</button>
     </div>
     <div class="modal-body">
+      <!-- Master Notification Switch -->
+      <div class="settings-row master-switch-row" style="background: var(--ivory); padding: 16px; border-radius: 12px; margin-bottom: 18px; border-left: 4px solid var(--gold);">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+          <div style="flex:1; min-width:0;">
+            <div id="masterNotifyLabel" style="font-weight:700; font-size:15px; color:var(--green); margin-bottom:4px;">🔔 ส่งเมลแจ้งเตือน: เปิด</div>
+            <div id="masterNotifyDesc" style="font-size:12px; color:var(--gray); line-height:1.5;">
+              กำลังตรวจสอบสถานะ...
+            </div>
+          </div>
+          <div class="toggle-switch on" id="masterNotifyToggle" role="switch" tabindex="0">
+            <div class="toggle-knob"></div>
+          </div>
+        </div>
+        <div style="font-size:11px; color:var(--gray); margin-top:10px; padding-top:10px; border-top:1px dashed var(--border);">
+          💡 ใช้สำหรับ <strong>ปิดเมลทั้งระบบชั่วคราว</strong> ระหว่างที่กำลังเซ็ตอัพข้อมูล หรือไม่อยากรับเมลในช่วงนี้
+          <br>การตั้งค่านี้เก็บใน Google Sheets — มีผลทุกเครื่อง
+        </div>
+      </div>
+
       <div class="settings-row">
         <label>Google Apps Script Web App URL</label>
         <input type="text" id="s_webhookUrl" placeholder="https://script.google.com/macros/s/.../exec">

@@ -795,6 +795,80 @@ async function fetchLogsFromSheets(limit) {
   }
 }
 
+// =========== Server Settings (Master Switches) ===========
+let _cachedNotifyEnabled = true;  // local cache, refreshed from server
+
+async function fetchServerSettings() {
+  const settings = loadSettings();
+  if (!settings.webhookUrl) return null;
+  try {
+    const url = settings.webhookUrl + (settings.webhookUrl.includes("?") ? "&" : "?")
+      + "action=settings&t=" + Date.now();
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    const result = await res.json();
+    return result.data || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function setServerSetting(key, value) {
+  const settings = loadSettings();
+  if (!settings.webhookUrl) return false;
+  try {
+    await fetch(settings.webhookUrl, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "setSetting", data: { key, value: String(value) }, ts: Date.now() }),
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function loadNotifyEnabledFlag() {
+  const data = await fetchServerSettings();
+  if (data && data.notifications_enabled) {
+    _cachedNotifyEnabled = String(data.notifications_enabled.value).toLowerCase() === "true";
+  }
+  return _cachedNotifyEnabled;
+}
+
+async function toggleMasterNotify() {
+  const newValue = !_cachedNotifyEnabled;
+  const ok = await setServerSetting("notifications_enabled", newValue ? "true" : "false");
+  if (!ok) {
+    showToast("เปลี่ยนการตั้งค่าไม่สำเร็จ", "error");
+    return;
+  }
+  _cachedNotifyEnabled = newValue;
+  logActivity(newValue ? "notify_on" : "notify_off",
+    newValue ? "เปิดการแจ้งเตือนเมลทั้งระบบ" : "ปิดการแจ้งเตือนเมลทั้งระบบ");
+  updateNotifySwitchUI();
+  showToast(newValue ? "🔔 เปิดการแจ้งเตือนเมลแล้ว" : "🔕 ปิดการแจ้งเตือนเมลแล้ว — จะไม่ส่งเมลจนกว่าจะเปิดอีก", newValue ? "success" : "warning");
+}
+
+function updateNotifySwitchUI() {
+  const toggle = document.getElementById("masterNotifyToggle");
+  const label = document.getElementById("masterNotifyLabel");
+  const desc = document.getElementById("masterNotifyDesc");
+  if (!toggle) return;
+  toggle.classList.toggle("on", _cachedNotifyEnabled);
+  if (label) {
+    label.textContent = _cachedNotifyEnabled ? "🔔 ส่งเมลแจ้งเตือน: เปิด" : "🔕 ส่งเมลแจ้งเตือน: ปิด";
+    label.style.color = _cachedNotifyEnabled ? "var(--green)" : "var(--red)";
+  }
+  if (desc) {
+    desc.textContent = _cachedNotifyEnabled
+      ? "ระบบส่งเมลแจ้งเตือนตามปกติ (เลยกำหนดทุกวัน · ด่วน 15 วัน · ใกล้ครบ 30 วัน)"
+      : "🚫 ปิดการส่งเมลทั้งระบบ — รถทุกคันจะไม่ได้รับการแจ้งเตือน จนกว่าจะกดเปิดอีกครั้ง";
+  }
+}
+
+
 // =========== Backup & Restore ===========
 async function fetchBackupList() {
   const settings = loadSettings();
@@ -1562,6 +1636,8 @@ function openSettings() {
   $("s_alertDays").value = s.alertDays || 30;
   $("recordCount").textContent = records.length;
   $("settingsOverlay").classList.add("show");
+  // Refresh master notify status from server
+  loadNotifyEnabledFlag().then(() => updateNotifySwitchUI());
 }
 function closeSettings() {
   $("settingsOverlay").classList.remove("show");
@@ -2850,6 +2926,15 @@ function init() {
   $("btnResetData").addEventListener("click", resetData);
   $("settingsOverlay").addEventListener("click", e => {
     if (e.target.id === "settingsOverlay") closeSettings();
+  });
+  // Master notification toggle
+  $("masterNotifyToggle").addEventListener("click", () => {
+    const willDisable = _cachedNotifyEnabled;
+    const msg = willDisable
+      ? "ปิดการส่งเมลแจ้งเตือนทั้งระบบ?\n\nรถทุกคันจะไม่ได้รับเมลเตือนจนกว่าจะเปิดอีกครั้ง"
+      : "เปิดการส่งเมลแจ้งเตือนทั้งระบบอีกครั้ง?\n\nระบบจะเริ่มส่งเมลตามปกติ";
+    if (!confirm(msg)) return;
+    toggleMasterNotify();
   });
 
   // Keyboard shortcuts
