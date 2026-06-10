@@ -1447,6 +1447,106 @@
   /* แตะแถวเปิดดูได้ */
   tbody tr { cursor: pointer; }
   tbody tr:hover { background: rgba(0, 102, 179, 0.04); }
+
+  /* ===== Timeline ประวัติรอบ ===== */
+  .tl-item {
+    display: flex;
+    gap: 12px;
+  }
+  .tl-marker {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 18px;
+    flex-shrink: 0;
+  }
+  .tl-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #cbd5e1;
+    border: 2px solid white;
+    box-shadow: 0 0 0 2px #cbd5e1;
+    margin-top: 6px;
+    flex-shrink: 0;
+  }
+  .tl-current .tl-dot {
+    background: var(--gold);
+    box-shadow: 0 0 0 2px var(--gold);
+  }
+  .tl-line {
+    width: 2px;
+    flex: 1;
+    background: #e2e8f0;
+    margin: 4px 0;
+  }
+  .tl-card {
+    flex: 1;
+    min-width: 0;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+  }
+  .tl-current .tl-card {
+    border-color: var(--gold);
+    background: linear-gradient(135deg, #fffdf7 0%, #fdf8ec 100%);
+    box-shadow: 0 2px 8px rgba(201, 169, 97, 0.15);
+  }
+  .tl-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .tl-range {
+    font-weight: 600;
+    color: var(--navy);
+    font-size: 13px;
+  }
+  .tl-badge-current {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--gold);
+    color: var(--navy);
+  }
+  .tl-amount-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-top: 6px;
+  }
+  .tl-amount {
+    font-family: 'Noto Serif Thai', serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--navy);
+  }
+  .tl-diff {
+    font-size: 12px;
+    font-weight: 700;
+    padding: 1px 8px;
+    border-radius: 8px;
+  }
+  .tl-up { background: #fee2e2; color: var(--red); }
+  .tl-down { background: #dcfce7; color: var(--green); }
+  .tl-same { background: #f3f4f6; color: var(--gray); }
+  .tl-meta {
+    font-size: 12px;
+    color: var(--gray);
+    margin-top: 6px;
+  }
+  .tl-note {
+    font-size: 12px;
+    color: var(--navy);
+    margin-top: 6px;
+    padding: 6px 10px;
+    background: var(--ivory);
+    border-radius: 6px;
+  }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   @keyframes bounceIn {
     0% { transform: scale(0); opacity: 0; }
@@ -2108,25 +2208,33 @@
 
 <!-- Renew Modal -->
 <div class="modal-overlay" id="renewOverlay">
-  <div class="modal" style="max-width:520px;">
+  <div class="modal" style="max-width:560px;">
     <div class="modal-header">
-      <h2>🔄 ต่ออายุรายการ</h2>
+      <h2>🔄 เพิ่มรอบใหม่</h2>
       <button class="modal-close" id="renewClose">×</button>
     </div>
     <div class="modal-body">
-      <div id="renewInfo" style="background:var(--ivory); padding:16px; border-radius:10px; margin-bottom:18px;">
-        <div style="font-size:13px; color:var(--gray); margin-bottom:4px;">รายการที่จะต่ออายุ</div>
+      <div id="renewInfo" style="background:var(--ivory); padding:16px; border-radius:10px; margin-bottom:14px;">
+        <div style="font-size:13px; color:var(--gray); margin-bottom:4px;">รายการที่จะเพิ่มรอบใหม่</div>
         <div id="renewPlate" style="font-family:'Noto Serif Thai',serif; font-weight:700; color:var(--navy); font-size:18px;">—</div>
         <div id="renewType" style="font-size:13px; color:var(--gray); margin-top:6px;">—</div>
       </div>
 
+      <!-- รอบปัจจุบัน (จะถูกเก็บเข้าประวัติเมื่อบันทึก) -->
+      <div id="renewOldSummary" style="background:#f8f9fb; border:1px dashed var(--border); padding:12px 14px; border-radius:10px; margin-bottom:16px; font-size:13px;">
+        <div style="font-weight:600; color:var(--gray); margin-bottom:6px;">📦 รอบปัจจุบัน (จะถูกเก็บเข้าประวัติ)</div>
+        <div id="renewOldDetail" style="color:var(--navy); line-height:1.7;">—</div>
+      </div>
+
+      <div style="font-weight:600; color:var(--gold); font-size:13px; margin-bottom:10px; padding-bottom:6px; border-bottom:1px solid var(--border);">ข้อมูลรอบใหม่</div>
+
       <div class="form-field" style="margin-bottom:14px;">
-        <label>วันสิ้นสุดเดิม</label>
-        <input type="date" id="renewOldEnd" disabled style="background:#f3f4f6;">
+        <label>วันเริ่มต้นรอบใหม่ * <span style="font-weight:400; color:var(--gray);">(กรอกแล้ววันสิ้นสุดจะคำนวณให้)</span></label>
+        <input type="date" id="renewStart">
       </div>
 
       <div class="form-field" style="margin-bottom:14px;">
-        <label>ระยะเวลาต่ออายุ *</label>
+        <label>ระยะเวลา</label>
         <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
           <button type="button" class="renew-period-btn" data-period="6m">6 เดือน</button>
           <button type="button" class="renew-period-btn active" data-period="1y">1 ปี</button>
@@ -2135,12 +2243,17 @@
       </div>
 
       <div class="form-field" style="margin-bottom:14px;">
-        <label>วันสิ้นสุดใหม่</label>
+        <label>วันสิ้นสุดรอบใหม่ * <span style="font-weight:400; color:var(--gray);">(แก้เองได้ถ้าไม่ตรง)</span></label>
         <input type="date" id="renewNewEnd">
       </div>
 
       <div class="form-field" style="margin-bottom:14px;">
-        <label>ยอดที่ชำระจริงครั้งนี้ (บาท)</label>
+        <label>บริษัทประกัน / หน่วยงาน</label>
+        <input type="text" id="renewCompany" placeholder="เช่น วิริยะ, LMG, กรมขนส่ง">
+      </div>
+
+      <div class="form-field" style="margin-bottom:14px;">
+        <label>ยอดที่ชำระรอบนี้ (บาท)</label>
         <input type="number" id="renewAmount" step="0.01" placeholder="0.00">
       </div>
 
@@ -2151,12 +2264,16 @@
 
       <div class="form-field">
         <label>หมายเหตุ (ถ้ามี)</label>
-        <textarea id="renewNotes" placeholder="เช่น เลขที่ใบเสร็จ, ผ่อน, อัพเกรดแผน..."></textarea>
+        <textarea id="renewNotes" placeholder="เช่น เปลี่ยนบริษัทเพราะถูกกว่า, เลขที่ใบเสร็จ..."></textarea>
+      </div>
+
+      <div style="margin-top:12px; font-size:12px; color:var(--gray); background:#fffbeb; padding:10px 12px; border-radius:8px;">
+        💡 ข้อมูลรอบปัจจุบันจะ <strong>ยังไม่เปลี่ยน</strong> จนกว่าจะกด "บันทึกรอบใหม่" — กดยกเลิกได้ตลอด ไม่มีอะไรหาย
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" id="renewCancel">ยกเลิก</button>
-      <button class="btn btn-primary" id="renewConfirm">✓ ต่ออายุ</button>
+      <button class="btn btn-primary" id="renewConfirm">✓ บันทึกรอบใหม่</button>
     </div>
   </div>
 </div>

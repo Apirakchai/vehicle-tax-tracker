@@ -69,6 +69,24 @@ const daysUntil = (iso) => {
   d.setHours(0,0,0,0);
   return Math.round((d - today) / 86400000);
 };
+// แปลงค่าวันที่รูปแบบใดก็ตาม (ISO เต็ม, Date object, yyyy-mm-dd) → "yyyy-mm-dd"
+// สำหรับใส่ใน <input type="date"> ซึ่งรับเฉพาะรูปแบบนี้
+function toDateInputValue(v) {
+  if (!v) return "";
+  // ถ้าเป็น yyyy-mm-dd อยู่แล้ว (อาจมีเวลาต่อท้าย) — ตัดเอาเฉพาะ 10 ตัวแรก
+  if (typeof v === "string") {
+    const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return m[1] + "-" + m[2] + "-" + m[3];
+  }
+  // ลองแปลงเป็น Date (เช่น ISO เต็มจาก Google Sheets หรือ Date object)
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return "";
+  // ใช้ local date components กัน timezone เลื่อนวัน
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${da}`;
+}
 const statusOf = (rec) => {
   if (rec.suspended) return "suspended";
   const d = daysUntil(rec.end);
@@ -655,7 +673,10 @@ function calcRenewEnd(oldEnd, period) {
 
 function openRenewModal(id) {
   const r = records.find(x => x.id === id);
-  if (!r) return;
+  if (!r) {
+    showToast("ไม่พบข้อมูลรายการนี้", "error");
+    return;
+  }
   renewingId = id;
   renewPeriod = "1y";
   isModalOpen = true;
@@ -663,18 +684,32 @@ function openRenewModal(id) {
   $("renewPlate").textContent = r.plate;
   const subParts = [r.vehicle, r.owner, r.type].filter(Boolean);
   $("renewType").textContent = subParts.join(" · ");
-  $("renewOldEnd").value = r.end || "";
-  $("renewNewEnd").value = calcRenewEnd(r.end, renewPeriod);
+
+  // สรุปรอบปัจจุบัน (อ้างอิง — จะถูกเก็บเข้าประวัติเมื่อบันทึก)
+  const oldStart = toDateInputValue(r.start);
+  const oldEnd = toDateInputValue(r.end);
+  $("renewOldDetail").innerHTML = [
+    `📅 ${oldStart ? fmtDate(oldStart) : "—"} → ${oldEnd ? fmtDate(oldEnd) : "—"}`,
+    `🏢 ${escapeHtml(r.company || "—")}`,
+    `💰 ${fmtMoney(r.amount)}`,
+  ].join("<br>");
+
+  // รอบใหม่: วันเริ่มเว้นว่างให้กรอก — กรอกแล้ววันสิ้นสุดจะคำนวณให้ (1 ปี default)
+  $("renewStart").value = "";
+  $("renewNewEnd").value = "";
+  $("renewCompany").value = r.company || "";   // ดึงค่าเดิมมาให้ แก้ได้
   $("renewAmount").value = r.amount || "";
   $("renewHandler").value = r.handler || "";
   $("renewNotes").value = "";
 
-  // Reset period buttons
+  // Reset period buttons เป็น 1 ปี
   document.querySelectorAll(".renew-period-btn").forEach(b => {
     b.classList.toggle("active", b.dataset.period === "1y");
   });
 
   $("renewOverlay").classList.add("show");
+  // โฟกัสช่องวันเริ่ม ให้กรอกได้เลย
+  setTimeout(() => $("renewStart").focus(), 150);
 }
 
 function closeRenewModal() {
@@ -688,9 +723,14 @@ function selectRenewPeriod(period) {
   document.querySelectorAll(".renew-period-btn").forEach(b => {
     b.classList.toggle("active", b.dataset.period === period);
   });
-  // Update new end date based on old end
-  const oldEnd = $("renewOldEnd").value;
-  $("renewNewEnd").value = calcRenewEnd(oldEnd, period);
+  // คำนวณวันสิ้นสุดจาก "วันเริ่มรอบใหม่" ที่ผู้ใช้กรอก
+  recalcRenewEnd();
+}
+
+function recalcRenewEnd() {
+  const start = $("renewStart").value;
+  if (!start) return;  // ยังไม่กรอกวันเริ่ม — ไม่คำนวณ
+  $("renewNewEnd").value = calcRenewEnd(start, renewPeriod);
 }
 
 function confirmRenew() {
@@ -699,47 +739,59 @@ function confirmRenew() {
   if (idx < 0) return;
   const r = records[idx];
 
+  const newStart = $("renewStart").value;
   const newEnd = $("renewNewEnd").value;
+  if (!newStart) {
+    showToast("กรุณากรอกวันเริ่มต้นรอบใหม่", "error");
+    $("renewStart").focus();
+    return;
+  }
   if (!newEnd) {
-    showToast("กรุณาระบุวันสิ้นสุดใหม่", "error");
+    showToast("กรุณาระบุวันสิ้นสุดรอบใหม่", "error");
+    $("renewNewEnd").focus();
+    return;
+  }
+  if (newEnd <= newStart) {
+    showToast("วันสิ้นสุดต้องอยู่หลังวันเริ่มต้น", "error");
     return;
   }
   const newAmount = parseFloat($("renewAmount").value) || 0;
+  const newCompany = $("renewCompany").value.trim();
   const handler = $("renewHandler").value.trim();
   const notes = $("renewNotes").value.trim();
   const today = new Date().toISOString().slice(0, 10);
 
-  // Record history entry before modifying
+  // 📦 เก็บรอบปัจจุบันทั้งชุดเข้าประวัติ ก่อนเขียนทับ
   if (!Array.isArray(r.history)) r.history = [];
   r.history.push({
-    date: today,
-    action: "renew",
-    period: renewPeriod,
-    oldEnd: r.end,
-    newEnd: newEnd,
-    amount: newAmount,
-    handler: handler,
-    notes: notes,
+    archivedAt: today,
+    start: toDateInputValue(r.start),
+    end: toDateInputValue(r.end),
+    amount: Number(r.amount) || 0,
+    company: r.company || "",
+    handler: r.handler || "",
+    payStatus: r.payStatus || "",
+    note: notes,                       // หมายเหตุของการต่อรอบนี้
     user: getCurrentUserName(),
   });
 
-  // Apply renewal
-  r.start = r.end || r.start;       // start of new term = end of previous term
+  // ✨ รอบใหม่ขึ้นแทน
+  r.start = newStart;
   r.end = newEnd;
   r.prevPaid = r.currPaid || r.prevPaid;
   r.currPaid = today;
-  if (newAmount > 0) r.amount = newAmount;
+  r.amount = newAmount;
+  if (newCompany) r.company = newCompany;
   if (handler) r.handler = handler;
   r.payStatus = "ชำระแล้ว";
-  if (notes) r.notes = (r.notes ? r.notes + "\n" : "") + `[${today}] ${notes}`;
 
   records[idx] = r;
   saveRecords();
   syncToSheets("upsert", r);
-  logActivity("renew", `ต่ออายุ ${r.plate} (${r.type}) — ${r.end}`, { plate: r.plate, type: r.type });
+  logActivity("renew", `เพิ่มรอบใหม่ ${r.plate} (${r.type}) — ${fmtDate(newStart)} ถึง ${fmtDate(newEnd)}`, { plate: r.plate, type: r.type });
   closeRenewModal();
   renderAll();
-  showToast(`ต่ออายุ ${r.plate} เรียบร้อย — ครบกำหนดถัดไป ${fmtDate(r.end)}`);
+  showToast(`✓ บันทึกรอบใหม่ ${r.plate} — ครบกำหนด ${fmtDate(r.end)} (รอบเก่าเก็บในประวัติแล้ว)`);
 }
 
 // Helper used here, will be defined fully later when adding multi-user
@@ -1291,12 +1343,12 @@ function openModal(id) {
     $("f_owner").value = r.owner || "";
     $("f_type").value = r.type || "ต่อภาษี";
     $("f_company").value = r.company || "";
-    $("f_start").value = r.start || "";
-    $("f_end").value = r.end || "";
+    $("f_start").value = toDateInputValue(r.start);
+    $("f_end").value = toDateInputValue(r.end);
     $("f_amount").value = r.amount || "";
     $("f_month").value = r.month || "";
-    $("f_prevPaid").value = r.prevPaid || "";
-    $("f_currPaid").value = r.currPaid || "";
+    $("f_prevPaid").value = toDateInputValue(r.prevPaid);
+    $("f_currPaid").value = toDateInputValue(r.currPaid);
     $("f_handler").value = r.handler || "";
     $("f_payStatus").value = r.payStatus || "";
     $("f_notes").value = r.notes || "";
@@ -1362,33 +1414,78 @@ function renderHistory(rec) {
     return;
   }
   section.style.display = "block";
-  badge.textContent = history.length + " ครั้ง";
+  badge.textContent = history.length + " รอบ";
 
-  // Sort newest first
-  const sorted = [...history].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-  list.innerHTML = sorted.map(h => {
-    const d = new Date(h.date);
-    const day = d.getDate();
-    const month = THAI_MONTHS_SHORT[d.getMonth()];
-    const year = (d.getFullYear() + 543).toString().slice(-2);
-    const periodText = h.period === "6m" ? "6 เดือน" : h.period === "2y" ? "2 ปี" : "1 ปี";
-    const actionText = h.action === "renew" ? `ต่ออายุ ${periodText}` : (h.action || "—");
+  // รวมรอบปัจจุบัน + ประวัติ เป็น timeline เดียว (ใหม่สุดบน)
+  const sortKey = h => h.archivedAt || h.date || "";
+  const sorted = [...history].sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
+
+  const rounds = [
+    {
+      isCurrent: true,
+      start: toDateInputValue(rec.start),
+      end: toDateInputValue(rec.end),
+      amount: Number(rec.amount) || 0,
+      company: rec.company || "",
+      handler: rec.handler || "",
+      user: "",
+      note: "",
+      when: "",
+    },
+    ...sorted.map(h => ({
+      isCurrent: false,
+      // รองรับทั้งรูปแบบใหม่ (start/end/company) และเก่า (oldEnd/newEnd/period)
+      start: toDateInputValue(h.start || ""),
+      end: toDateInputValue(h.end || h.oldEnd || h.newEnd || ""),
+      amount: Number(h.amount) || 0,
+      company: h.company || "",
+      handler: h.handler || "",
+      user: h.user || "",
+      note: h.note || h.notes || "",
+      when: h.archivedAt || h.date || "",
+      legacyPeriod: h.period || "",
+    })),
+  ];
+
+  list.innerHTML = rounds.map((rd, i) => {
+    // เทียบราคากับรอบก่อนหน้า (ตัวถัดไปใน list = รอบเก่ากว่า)
+    const prev = rounds[i + 1];
+    let diffHtml = "";
+    if (prev && rd.amount > 0 && prev.amount > 0) {
+      const diff = rd.amount - prev.amount;
+      if (Math.abs(diff) >= 0.01) {
+        const up = diff > 0;
+        diffHtml = `<span class="tl-diff ${up ? "tl-up" : "tl-down"}">${up ? "▲" : "▼"} ${up ? "+" : "−"}${fmtMoney(Math.abs(diff)).replace("฿", "")}</span>`;
+      } else {
+        diffHtml = `<span class="tl-diff tl-same">= เท่าเดิม</span>`;
+      }
+    }
+    const range = rd.start && rd.end ? `${fmtDate(rd.start)} → ${fmtDate(rd.end)}`
+                : rd.end ? `ถึง ${fmtDate(rd.end)}` : "—";
+    const metaParts = [];
+    if (rd.company) metaParts.push(`🏢 ${escapeHtml(rd.company)}`);
+    if (rd.handler) metaParts.push(`👤 ${escapeHtml(rd.handler)}`);
+    if (rd.user && rd.user !== "ระบบ" && rd.user !== rd.handler) metaParts.push(`บันทึกโดย ${escapeHtml(rd.user)}`);
+    if (rd.when) metaParts.push(`เมื่อ ${fmtDate(rd.when)}`);
+
     return `
-      <div class="history-item">
-        <div class="h-date">
-          <span class="h-day">${day}</span>
-          <span>${month} ${year}</span>
+      <div class="tl-item ${rd.isCurrent ? "tl-current" : ""}">
+        <div class="tl-marker">
+          <div class="tl-dot"></div>
+          ${i < rounds.length - 1 ? '<div class="tl-line"></div>' : ""}
         </div>
-        <div class="h-info">
-          <div class="h-action">${escapeHtml(actionText)}</div>
-          <div class="h-meta">
-            ${h.oldEnd ? "เดิม " + fmtDate(h.oldEnd) + " → " : ""}${h.newEnd ? "ใหม่ " + fmtDate(h.newEnd) : ""}
-            ${h.handler ? " · " + escapeHtml(h.handler) : ""}
-            ${h.user && h.user !== "ระบบ" ? " · โดย " + escapeHtml(h.user) : ""}
+        <div class="tl-card">
+          <div class="tl-head">
+            <span class="tl-range">${range}</span>
+            ${rd.isCurrent ? '<span class="tl-badge-current">รอบปัจจุบัน</span>' : ""}
           </div>
-          ${h.notes ? `<div class="h-meta" style="margin-top:4px; color:var(--navy);">"${escapeHtml(h.notes)}"</div>` : ""}
+          <div class="tl-amount-row">
+            <span class="tl-amount">${rd.amount > 0 ? fmtMoney(rd.amount) : "—"}</span>
+            ${diffHtml}
+          </div>
+          ${metaParts.length ? `<div class="tl-meta">${metaParts.join(" · ")}</div>` : ""}
+          ${rd.note ? `<div class="tl-note">💬 ${escapeHtml(rd.note)}</div>` : ""}
         </div>
-        <div class="h-amount">${h.amount > 0 ? fmtMoney(h.amount) : "—"}</div>
       </div>
     `;
   }).join("");
@@ -1779,6 +1876,17 @@ async function autoPullFromSheets() {
         return;
       }
       // เปรียบเทียบกับข้อมูลปัจจุบัน — อัปเดตเฉพาะที่เปลี่ยน
+      // Merge: ถ้า server ยังไม่มีประวัติแต่เครื่องมี — เก็บของเครื่องไว้และส่งขึ้นไป
+      const localById = {};
+      records.forEach(r => { localById[r.id] = r; });
+      result.data.forEach(srv => {
+        const loc = localById[srv.id];
+        if (loc && Array.isArray(loc.history) && loc.history.length > 0 &&
+            (!Array.isArray(srv.history) || srv.history.length === 0)) {
+          srv.history = loc.history;
+          enqueueSync("upsert", srv);  // ส่งประวัติขึ้น Sheets
+        }
+      });
       const newJson = JSON.stringify(result.data);
       const oldJson = JSON.stringify(records);
       if (newJson !== oldJson) {
@@ -3019,9 +3127,7 @@ function init() {
   document.querySelectorAll(".renew-period-btn").forEach(btn => {
     btn.addEventListener("click", () => selectRenewPeriod(btn.dataset.period));
   });
-  $("renewOldEnd").addEventListener("change", () => {
-    $("renewNewEnd").value = calcRenewEnd($("renewOldEnd").value, renewPeriod);
-  });
+  $("renewStart").addEventListener("change", recalcRenewEnd);
   $("renewOverlay").addEventListener("click", e => {
     if (e.target.id === "renewOverlay") closeRenewModal();
   });
