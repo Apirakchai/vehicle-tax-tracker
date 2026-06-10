@@ -2721,6 +2721,7 @@ function renderChart(canvasId, type, data, options = {}) {
 // =========== History Page (หน้าประวัติ) ===========
 let _histView = "time";   // "time" | "vehicle"
 let _histFilter = { plate: "all", year: "all", type: "all" };
+let _histRoundLookup = [];   // เก็บข้อมูลรอบสำหรับกล่องดูรายละเอียด
 
 // รวมทุกรอบ (ปัจจุบัน + ประวัติ) ของทุก record เป็น list เดียว
 function collectAllRounds() {
@@ -2877,11 +2878,14 @@ function renderHistoryPage() {
     return `<span class="tl-diff ${up ? "tl-up" : "tl-down"}">${up ? "▲ +" : "▼ −"}${fmtMoney(Math.abs(d)).replace("฿", "")}</span>`;
   };
 
+  // เก็บข้อมูลแต่ละรอบไว้ดูรายละเอียด (อ่านอย่างเดียว) — index อ้างอิงจาก data-round-idx
+  _histRoundLookup = [];
   const cardOf = (rd) => {
+    const idx = _histRoundLookup.push(rd) - 1;
     const range = rd.start && rd.end ? `${fmtDate(rd.start)} → ${fmtDate(rd.end)}` : rd.end ? `ถึง ${fmtDate(rd.end)}` : "—";
     const meta = [rd.company, rd.handler || rd.user].filter(Boolean).map(escapeHtml).join(" · ");
     return `
-      <div class="hp-card ${rd.isCurrent ? "hp-current" : ""}" data-record="${escapeHtml(rd.recordId)}">
+      <div class="hp-card ${rd.isCurrent ? "hp-current" : ""}" data-round-idx="${idx}">
         <div class="hp-main">
           <div class="hp-plate">${escapeHtml(rd.plate)}
             ${typeBadge(rd.type)}
@@ -2918,10 +2922,53 @@ function renderHistoryPage() {
     }).join("");
   }
 
-  // คลิกการ์ด → เปิดหน้าแก้ไข record นั้น
+  // คลิกการ์ด → เปิดกล่องดูรายละเอียดรอบนั้น (อ่านอย่างเดียว ไม่แก้ไข)
   listEl.querySelectorAll(".hp-card").forEach(el => {
-    el.addEventListener("click", () => openModal(el.dataset.record));
+    el.addEventListener("click", () => {
+      const rd = _histRoundLookup[Number(el.dataset.roundIdx)];
+      if (rd) openRoundDetail(rd);
+    });
   });
+}
+
+// กล่องดูรายละเอียดรอบ (อ่านอย่างเดียว)
+function openRoundDetail(rd) {
+  const range = rd.start && rd.end ? `${fmtDate(rd.start)} → ${fmtDate(rd.end)}`
+              : rd.end ? `ถึง ${fmtDate(rd.end)}` : "—";
+  const rows = [
+    ["ทะเบียน", escapeHtml(rd.plate)],
+    ["ประเภท", escapeHtml(rd.type || "—")],
+    ["ช่วงคุ้มครอง", range],
+    ["บริษัท / หน่วยงาน", escapeHtml(rd.company || "—")],
+    ["ยอดที่ชำระ", rd.amount > 0 ? fmtMoney(rd.amount) : "—"],
+    ["ผู้ดำเนินการ", escapeHtml(rd.handler || "—")],
+  ];
+  if (rd.user && rd.user !== "ระบบ") rows.push(["บันทึกโดย", escapeHtml(rd.user)]);
+  if (rd.when) rows.push(["บันทึกเมื่อ", fmtDate(rd.when)]);
+  if (rd.note) rows.push(["หมายเหตุ", escapeHtml(rd.note)]);
+
+  $("roundDetailTitle").innerHTML =
+    `${escapeHtml(rd.plate)} ${rd.isCurrent ? '<span class="tl-badge-current">รอบปัจจุบัน</span>' : '<span class="rd-badge-old">รอบเก่า</span>'}`;
+  $("roundDetailBody").innerHTML = rows.map(([k, v]) =>
+    `<div class="rd-row"><span class="rd-key">${k}</span><span class="rd-val">${v}</span></div>`
+  ).join("");
+
+  // ปุ่ม "ดู/แก้ไขรถคันนี้" — แสดงเฉพาะรอบปัจจุบัน
+  const editBtn = $("roundDetailEdit");
+  if (rd.isCurrent) {
+    editBtn.style.display = "";
+    editBtn.onclick = () => { closeRoundDetail(); openModal(rd.recordId); };
+  } else {
+    editBtn.style.display = "none";
+    editBtn.onclick = null;
+  }
+
+  $("roundDetailOverlay").classList.add("show");
+  isModalOpen = true;
+}
+function closeRoundDetail() {
+  $("roundDetailOverlay").classList.remove("show");
+  isModalOpen = false;
 }
 
 function switchPage(page) {
@@ -3353,6 +3400,12 @@ function init() {
   $("renewOverlay").addEventListener("click", e => {
     if (e.target.id === "renewOverlay") closeRenewModal();
   });
+  // Round detail modal (อ่านอย่างเดียว)
+  $("roundDetailClose").addEventListener("click", closeRoundDetail);
+  $("roundDetailCloseBtn").addEventListener("click", closeRoundDetail);
+  $("roundDetailOverlay").addEventListener("click", e => {
+    if (e.target.id === "roundDetailOverlay") closeRoundDetail();
+  });
 
   // Suspend buttons in edit modal
   $("btnToggleSuspendThis").addEventListener("click", () => {
@@ -3496,6 +3549,7 @@ function init() {
     if (e.key === "Escape") {
       closeModal();
       closeSettings();
+      closeRoundDetail();
     }
     if ((e.ctrlKey || e.metaKey) && e.key === "n") {
       e.preventDefault();

@@ -1612,6 +1612,27 @@
   }
   .hp-group-head:first-child { margin-top: 0; }
   .hp-group-sub { font-family: 'Sarabun', sans-serif; font-size: 12px; font-weight: 400; color: var(--gray); }
+
+  /* กล่องดูรายละเอียดรอบ */
+  .rd-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .rd-row:last-child { border-bottom: none; }
+  .rd-key { color: var(--gray); flex-shrink: 0; }
+  .rd-val { color: var(--navy); font-weight: 600; text-align: right; }
+  .rd-badge-old {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #e2e8f0;
+    color: var(--gray);
+  }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   @keyframes bounceIn {
     0% { transform: scale(0); opacity: 0; }
@@ -2380,6 +2401,24 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" id="renewCancel">ยกเลิก</button>
       <button class="btn btn-primary" id="renewConfirm">✓ บันทึกรอบใหม่</button>
+    </div>
+  </div>
+</div>
+
+<!-- Round Detail Modal (อ่านอย่างเดียว) -->
+<div class="modal-overlay" id="roundDetailOverlay">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <h2 id="roundDetailTitle" style="font-size:18px;">—</h2>
+      <button class="modal-close" id="roundDetailClose">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:12px; color:var(--gray); margin-bottom:12px;">📜 ข้อมูลรอบนี้ (ดูอย่างเดียว — แก้ไขไม่ได้)</div>
+      <div id="roundDetailBody"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="roundDetailCloseBtn">ปิด</button>
+      <button class="btn btn-primary" id="roundDetailEdit">ดู / แก้ไขรถคันนี้</button>
     </div>
   </div>
 </div>
