@@ -1440,6 +1440,13 @@
   }
   .sync-status.offline .dot { background: var(--gray); }
   .sync-status.syncing .dot { background: var(--amber); animation: pulse 1.2s infinite; }
+  .sync-status.pending { background: rgba(245, 158, 11, 0.2); cursor: pointer; }
+  .sync-status.pending .dot { background: var(--amber); animation: pulse 1.2s infinite; }
+  .sync-status { cursor: pointer; }
+
+  /* แตะแถวเปิดดูได้ */
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: rgba(0, 102, 179, 0.04); }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   @keyframes bounceIn {
     0% { transform: scale(0); opacity: 0; }
@@ -1571,6 +1578,13 @@
     .type-pill { font-size: 10px; padding: 3px 8px; }
     .pdf-btn-cell { width: 28px; height: 28px; font-size: 12px; }
     .icon-btn { width: 28px; height: 28px; font-size: 13px; }
+
+    /* ปุ่มบันทึกในโมดัลใหญ่ขึ้น แตะง่ายบนมือถือ */
+    .modal-footer .btn {
+      padding: 13px 22px;
+      font-size: 15px;
+      min-height: 48px;
+    }
   }
 
   /* Print */
@@ -2001,6 +2015,7 @@
         <button class="btn btn-secondary btn-sm" id="btnTestSync">ทดสอบเชื่อมต่อ</button>
         <button class="btn btn-secondary btn-sm" id="btnPullData">ดึงข้อมูลจาก Sheets</button>
         <button class="btn btn-secondary btn-sm" id="btnPushAll">ส่งข้อมูลขึ้น Sheets</button>
+        <button class="btn btn-secondary btn-sm" id="btnHealthCheck">🩺 ตรวจสุขภาพข้อมูล</button>
       </div>
       <div class="settings-row">
         <label>จำนวนรายการในระบบ: <span id="recordCount">0</span></label>

@@ -69,6 +69,8 @@ function doPost(e) {
       deleteRecord(body.data.id);
       result.message = "ลบแล้ว: " + body.data.id;
     } else if (action === "replaceAll") {
+      // Safety: สร้าง backup ก่อนเขียนทับทั้งหมดเสมอ
+      try { createBackup(); } catch (e) {}
       replaceAll(body.data);
       result.message = "อัปโหลด " + body.data.length + " รายการแล้ว";
     } else if (action === "logEntry") {
@@ -129,7 +131,10 @@ function doGet(e) {
   if (action === "settings") {
     return jsonResponse({ ok: true, data: getAllSettings() });
   }
-  return jsonResponse({ ok: true, message: "Vehicle Tax Tracker API", actions: ["list", "alerts", "logs", "files", "backups", "backupData", "settings"] });
+  if (action === "healthcheck") {
+    return jsonResponse({ ok: true, data: runHealthCheck() });
+  }
+  return jsonResponse({ ok: true, message: "Vehicle Tax Tracker API", actions: ["list", "alerts", "logs", "files", "backups", "backupData", "settings", "healthcheck"] });
 }
 
 function jsonResponse(obj) {
@@ -482,6 +487,49 @@ function getAllSettings() {
 function isNotificationsEnabled() {
   const v = getSetting("notifications_enabled", "true");
   return String(v).toLowerCase() === "true";
+}
+
+// ============= DATA HEALTH CHECK =============
+// ตรวจและซ่อมข้อมูล: ลบแถวที่ id ว่าง (ข้อมูลเสียจากบั๊กเดิม) + รวมรายการ id ซ้ำ (เก็บล่าสุด)
+// สร้าง backup ก่อนซ่อมเสมอ
+function runHealthCheck() {
+  const sh = getSheet();
+  const lastRow = sh.getLastRow();
+  const report = { totalBefore: 0, removedEmptyId: 0, removedDuplicates: 0, totalAfter: 0, backup: null };
+  if (lastRow < 2) return report;
+
+  // Backup ก่อนซ่อมเสมอ
+  report.backup = createBackup();
+
+  const data = sh.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
+  report.totalBefore = data.length;
+
+  const updatedIdx = HEADERS.indexOf("updated");
+  const byId = {};
+  const order = [];  // รักษาลำดับแถวเดิม
+  data.forEach(function(row) {
+    const id = String(row[0] || "").trim();
+    if (!id) { report.removedEmptyId++; return; }
+    if (!byId[id]) {
+      byId[id] = row;
+      order.push(id);
+    } else {
+      // id ซ้ำ — เก็บตัวที่ updated ใหม่กว่า
+      report.removedDuplicates++;
+      const a = String(byId[id][updatedIdx] || "");
+      const b = String(row[updatedIdx] || "");
+      if (b > a) byId[id] = row;
+    }
+  });
+
+  const rows = order.map(function(id) { return byId[id]; });
+  // เขียนกลับ
+  sh.getRange(2, 1, lastRow - 1, HEADERS.length).clearContent();
+  if (rows.length > 0) {
+    sh.getRange(2, 1, rows.length, HEADERS.length).setValues(rows);
+  }
+  report.totalAfter = rows.length;
+  return report;
 }
 
 // ============= BACKUP & RESTORE =============

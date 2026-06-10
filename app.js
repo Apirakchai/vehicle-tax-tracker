@@ -447,6 +447,7 @@ function renderTable() {
   // attach action handlers
   tbody.querySelectorAll('button[data-action]').forEach(btn => {
     btn.addEventListener('click', e => {
+      e.stopPropagation();  // กันไม่ให้ trigger คลิกแถว
       const tr = e.target.closest('tr');
       const id = tr.dataset.id;
       const action = btn.dataset.action;
@@ -458,6 +459,14 @@ function renderTable() {
         const plate = btn.dataset.plate;
         generatePDFForPlates([plate]);
       }
+    });
+  });
+
+  // แตะที่แถว (นอกปุ่ม) = เปิดดูรายละเอียด — สะดวกบนมือถือ
+  tbody.querySelectorAll('tr').forEach(tr => {
+    tr.addEventListener('click', e => {
+      if (e.target.closest('button')) return;
+      openModal(tr.dataset.id);
     });
   });
 }
@@ -1411,6 +1420,12 @@ function saveRecord() {
     showToast("กรุณากรอกทะเบียนและวันที่สิ้นสุด", "error");
     return;
   }
+  // ปุ่มบันทึกแสดงสถานะ
+  const saveBtn = $("btnSave");
+  const origText = saveBtn.textContent;
+  saveBtn.disabled = true;
+  saveBtn.textContent = "💾 กำลังบันทึก...";
+  setTimeout(() => { saveBtn.disabled = false; saveBtn.textContent = origText; }, 1200);
   let recordToSync;
   if (editingId) {
     const idx = records.findIndex(r => r.id === editingId);
@@ -1496,33 +1511,152 @@ function exportCSV() {
 // =========== Google Sheets Sync (Apps Script Web App) ===========
 function setSyncStatus(state, text) {
   const el = $("syncStatus");
-  el.classList.remove("offline", "syncing");
+  el.classList.remove("offline", "syncing", "pending");
   if (state === "offline") el.classList.add("offline");
   if (state === "syncing") el.classList.add("syncing");
+  if (state === "pending") el.classList.add("pending");
   $("syncText").textContent = text;
 }
+
+// =========== Pending Sync Queue ===========
+// ระบบคิวซิงค์: ทุกการเปลี่ยนแปลงเข้าคิวก่อน → ส่ง → ตรวจสอบกับ Sheets ว่าเข้าจริง
+// → ลบออกจากคิวเมื่อยืนยันแล้วเท่านั้น ถ้าส่งไม่สำเร็จจะลองใหม่อัตโนมัติ ข้อมูลไม่หายเงียบๆ
+const PENDING_KEY = "bcf_vt_pending_sync";
+
+function loadPendingQueue() {
+  try { return JSON.parse(localStorage.getItem(PENDING_KEY)) || []; }
+  catch (e) { return []; }
+}
+function savePendingQueue(q) {
+  localStorage.setItem(PENDING_KEY, JSON.stringify(q));
+}
+function pendingKeyOf(it) {
+  return it.action + ":" + (it.data && it.data.id ? it.data.id : "x") + ":" + it.ts;
+}
+function enqueueSync(action, data) {
+  let q = loadPendingQueue();
+  // ถ้ามี upsert ของ record เดียวกันค้างอยู่ ให้แทนด้วยเวอร์ชันล่าสุด (กันซ้ำซ้อน)
+  if (action === "upsert" && data && data.id) {
+    q = q.filter(it => !(it.action === "upsert" && it.data && it.data.id === data.id));
+  }
+  q.push({ action, data, ts: new Date().toISOString(), attempts: 0 });
+  savePendingQueue(q);
+  updateSyncBadge();
+}
+
+let isFlushing = false;
+async function flushSyncQueue() {
+  if (isFlushing) return;
+  const settings = loadSettings();
+  if (!settings.webhookUrl) return;
+  let q = loadPendingQueue();
+  if (q.length === 0) { updateSyncBadge(); return; }
+
+  isFlushing = true;
+  setSyncStatus("syncing", `กำลังซิงค์ ${q.length} รายการ...`);
+  try {
+    // 1) ส่งทุกรายการในคิว
+    for (const item of q) {
+      try {
+        await fetch(settings.webhookUrl, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: item.action, data: item.data, ts: Date.now() }),
+        });
+      } catch (e) { /* network fail — จะลองใหม่รอบหน้า */ }
+      item.attempts = (item.attempts || 0) + 1;
+    }
+    savePendingQueue(q);
+
+    // 2) รอให้ Sheets เขียนเสร็จ แล้วตรวจสอบว่ารายการเข้าจริง
+    await new Promise(r => setTimeout(r, 1800));
+    const verified = await verifyPendingAgainstServer(q);
+
+    // 3) ลบเฉพาะรายการที่ยืนยันแล้วออกจากคิว
+    q = loadPendingQueue().filter(it => !verified.has(pendingKeyOf(it)));
+    savePendingQueue(q);
+  } finally {
+    isFlushing = false;
+    updateSyncBadge();
+  }
+}
+
+async function verifyPendingAgainstServer(items) {
+  const verified = new Set();
+  const settings = loadSettings();
+  if (!settings.webhookUrl) return verified;
+  try {
+    const url = settings.webhookUrl + (settings.webhookUrl.includes("?") ? "&" : "?")
+      + "action=list&t=" + Date.now();
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return verified;
+    const result = await res.json();
+    const serverRecords = Array.isArray(result.data) ? result.data : [];
+    const byId = {};
+    serverRecords.forEach(r => { byId[r.id] = r; });
+
+    items.forEach(it => {
+      if (it.action === "upsert" && it.data && it.data.id) {
+        const srv = byId[it.data.id];
+        // ยืนยันเมื่อ: record อยู่บน server และ updated ใหม่กว่าเวลาเข้าคิว
+        // (หรือส่งไปแล้ว 2+ ครั้งและ record มีอยู่ — กัน clock skew)
+        if (srv && (String(srv.updated || "") >= it.ts || (it.attempts || 0) >= 2)) {
+          verified.add(pendingKeyOf(it));
+        }
+      } else if (it.action === "delete" && it.data && it.data.id) {
+        if (!byId[it.data.id]) verified.add(pendingKeyOf(it));
+      } else {
+        // action อื่น (logEntry ฯลฯ) — ถือว่าสำเร็จหลังส่ง 1 ครั้ง
+        if ((it.attempts || 0) >= 1) verified.add(pendingKeyOf(it));
+      }
+    });
+  } catch (e) { /* verify ไม่ได้ — คงคิวไว้ */ }
+  return verified;
+}
+
+function updateSyncBadge() {
+  const q = loadPendingQueue();
+  if (q.length > 0) {
+    setSyncStatus("pending", `⏳ รอซิงค์ ${q.length}`);
+  } else {
+    setSyncStatus("ok", "ซิงค์แล้ว");
+  }
+}
+
 async function syncToSheets(action, data) {
   const settings = loadSettings();
   if (!settings.webhookUrl) return;
-  setSyncStatus("syncing", "กำลังซิงค์...");
-  try {
-    // Apps Script Web Apps require POST with text content type to avoid CORS preflight
-    await fetch(settings.webhookUrl, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action, data, ts: Date.now() }),
-    });
-    setSyncStatus("ok", "ซิงค์แล้ว");
-  } catch (e) {
-    setSyncStatus("offline", "ออฟไลน์");
-  }
+  enqueueSync(action, data);
+  flushSyncQueue();
 }
+
 async function pushAllToSheets() {
   const settings = loadSettings();
   if (!settings.webhookUrl) {
     showToast("กรุณาตั้งค่า Web App URL ก่อน", "error");
     return;
+  }
+  // Safety: เทียบจำนวนกับ server ก่อน — กันเขียนทับด้วยข้อมูลที่ขาดหาย
+  let serverCount = null;
+  try {
+    const url = settings.webhookUrl + (settings.webhookUrl.includes("?") ? "&" : "?")
+      + "action=list&t=" + Date.now();
+    const res = await fetch(url, { cache: "no-store" });
+    if (res.ok) {
+      const result = await res.json();
+      if (Array.isArray(result.data)) serverCount = result.data.length;
+    }
+  } catch (e) {}
+  if (serverCount !== null && records.length < serverCount) {
+    const missing = serverCount - records.length;
+    const pct = Math.round((missing / serverCount) * 100);
+    if (pct > 20) {
+      if (!confirm(
+        `⚠️ อันตราย!\n\nเครื่องนี้มี ${records.length} รายการ\nแต่ใน Google Sheets มี ${serverCount} รายการ\n\nการส่งขึ้นจะ "ลบ ${missing} รายการ (${pct}%)" ออกจาก Sheets!\n\nแน่ใจหรือไม่?`
+      )) return;
+      if (!confirm(`ยืนยันครั้งสุดท้าย: เขียนทับข้อมูลใน Google Sheets ด้วยข้อมูลของเครื่องนี้?\n\n(ระบบจะสร้าง backup ฝั่ง Sheets ก่อนเขียนทับ)`)) return;
+    }
   }
   setSyncStatus("syncing", "กำลังอัปโหลด...");
   try {
@@ -1539,6 +1673,53 @@ async function pushAllToSheets() {
     showToast("เกิดข้อผิดพลาด: " + e.message, "error");
   }
 }
+// =========== Data Health Check ===========
+async function runDataHealthCheck() {
+  const settings = loadSettings();
+  if (!settings.webhookUrl) {
+    showToast("กรุณาตั้งค่า Web App URL ก่อน", "error");
+    return;
+  }
+  if (!confirm(
+    "🩺 ตรวจสุขภาพข้อมูลใน Google Sheets?\n\n" +
+    "ระบบจะ:\n" +
+    "• สร้าง backup ก่อนซ่อมเสมอ\n" +
+    "• ลบแถวที่ไม่มีรหัส (ข้อมูลเสียจากบั๊กเดิม)\n" +
+    "• รวมรายการรหัสซ้ำ (เก็บตัวล่าสุด)"
+  )) return;
+
+  showToast("🩺 กำลังตรวจสุขภาพข้อมูล...", "warning");
+  try {
+    const url = settings.webhookUrl + (settings.webhookUrl.includes("?") ? "&" : "?")
+      + "action=healthcheck&t=" + Date.now();
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const result = await res.json();
+    const r = result.data || {};
+    const fixed = (r.removedEmptyId || 0) + (r.removedDuplicates || 0);
+    logActivity("healthcheck", `ตรวจสุขภาพข้อมูล: ลบแถวเสีย ${r.removedEmptyId || 0}, รวมซ้ำ ${r.removedDuplicates || 0}`);
+    if (fixed > 0) {
+      alert(
+        `🩺 ผลตรวจสุขภาพข้อมูล\n\n` +
+        `รายการก่อนซ่อม: ${r.totalBefore}\n` +
+        `ลบแถวไม่มีรหัส: ${r.removedEmptyId}\n` +
+        `รวมรายการซ้ำ: ${r.removedDuplicates}\n` +
+        `รายการหลังซ่อม: ${r.totalAfter}\n\n` +
+        `✅ Backup ก่อนซ่อม: ${r.backup || "-"}\n` +
+        `กำลังโหลดข้อมูลที่ซ่อมแล้ว...`
+      );
+      // ดึงข้อมูลที่ซ่อมแล้วมาใช้
+      await autoPullFromSheets();
+      renderAll();
+      showToast(`✅ ซ่อมข้อมูลแล้ว ${fixed} จุด — โหลดใหม่เรียบร้อย`);
+    } else {
+      showToast(`✅ ข้อมูลสมบูรณ์ดี (${r.totalAfter} รายการ) ไม่พบปัญหา`);
+    }
+  } catch (e) {
+    showToast("ตรวจไม่สำเร็จ: " + e.message, "error");
+  }
+}
+
 async function pullFromSheets() {
   const settings = loadSettings();
   if (!settings.webhookUrl) {
@@ -1578,6 +1759,11 @@ async function autoPullFromSheets() {
   if (isSyncing) return;          // ป้องกัน concurrent sync
   if (isModalOpen) return;         // ไม่ดึงตอนผู้ใช้กำลังแก้ไข
   if (document.hidden) return;     // ไม่ดึงตอนผู้ใช้ไม่ได้เปิดแท็บนี้
+  // ⚠️ สำคัญ: ถ้ามีรายการรอซิงค์ ห้ามดึงมาทับ — ส่งของค้างขึ้นไปก่อน
+  if (loadPendingQueue().length > 0) {
+    flushSyncQueue();
+    return;
+  }
   
   isSyncing = true;
   setSyncStatus("syncing", "กำลังซิงค์...");
@@ -1587,6 +1773,11 @@ async function autoPullFromSheets() {
     if (!res.ok) throw new Error("HTTP " + res.status);
     const result = await res.json();
     if (Array.isArray(result.data)) {
+      // ⚠️ Safety: ถ้า server คืนค่าว่างแต่เครื่องมีข้อมูล — ไม่ทับ (อาจเป็น error ฝั่ง Sheets)
+      if (result.data.length === 0 && records.length > 0) {
+        setSyncStatus("offline", "Sheets ว่างเปล่า — ไม่ดึงทับ");
+        return;
+      }
       // เปรียบเทียบกับข้อมูลปัจจุบัน — อัปเดตเฉพาะที่เปลี่ยน
       const newJson = JSON.stringify(result.data);
       const oldJson = JSON.stringify(records);
@@ -1611,10 +1802,16 @@ function startAutoSync() {
   stopAutoSync();
   const settings = loadSettings();
   if (!settings.webhookUrl) return;
-  // ดึงครั้งแรกทันที
-  autoPullFromSheets();
+  // ส่งคิวที่ค้างจาก session ก่อน (ถ้ามี) แล้วค่อยดึง
+  if (loadPendingQueue().length > 0) {
+    flushSyncQueue();
+  } else {
+    autoPullFromSheets();
+  }
   // ตั้ง interval
   autoSyncTimer = setInterval(autoPullFromSheets, AUTO_SYNC_INTERVAL);
+  // กลับมา online → ส่งคิวค้างทันที
+  window.addEventListener("online", () => flushSyncQueue());
 }
 
 function stopAutoSync() {
@@ -2942,6 +3139,17 @@ function init() {
   $("btnPullData").addEventListener("click", pullFromSheets);
   $("btnPushAll").addEventListener("click", pushAllToSheets);
   $("btnResetData").addEventListener("click", resetData);
+  $("btnHealthCheck").addEventListener("click", runDataHealthCheck);
+  // คลิก sync badge → ส่งคิวค้างทันที
+  $("syncStatus").addEventListener("click", () => {
+    const q = loadPendingQueue();
+    if (q.length > 0) {
+      showToast(`กำลังส่ง ${q.length} รายการที่ค้าง...`, "warning");
+      flushSyncQueue();
+    } else {
+      showToast("✓ ข้อมูลซิงค์ครบแล้ว");
+    }
+  });
   $("settingsOverlay").addEventListener("click", e => {
     if (e.target.id === "settingsOverlay") closeSettings();
   });
