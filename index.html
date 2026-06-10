@@ -1547,6 +1547,71 @@
     background: var(--ivory);
     border-radius: 6px;
   }
+
+  /* ===== หน้าประวัติ ===== */
+  .hist-view-btn {
+    padding: 8px 14px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--gray);
+    font-family: 'Sarabun', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .hist-view-btn.active {
+    background: var(--navy);
+    color: white;
+  }
+  .hp-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .hp-card:hover {
+    border-color: var(--blue);
+    box-shadow: 0 4px 12px rgba(0, 102, 179, 0.1);
+  }
+  .hp-card.hp-current { border-left: 4px solid var(--gold); }
+  .hp-main { flex: 1; min-width: 200px; }
+  .hp-plate {
+    font-family: 'Noto Serif Thai', serif;
+    font-weight: 700;
+    color: var(--navy);
+    font-size: 15px;
+  }
+  .hp-range { font-size: 12px; color: var(--gray); margin-top: 3px; }
+  .hp-right { text-align: right; }
+  .hp-amount {
+    font-family: 'Noto Serif Thai', serif;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--navy);
+  }
+  .hp-group-head {
+    font-family: 'Noto Serif Thai', serif;
+    font-weight: 700;
+    color: var(--navy);
+    font-size: 16px;
+    margin: 20px 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--gold);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .hp-group-head:first-child { margin-top: 0; }
+  .hp-group-sub { font-family: 'Sarabun', sans-serif; font-size: 12px; font-weight: 400; color: var(--gray); }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   @keyframes bounceIn {
     0% { transform: scale(0); opacity: 0; }
@@ -1733,6 +1798,10 @@
     <button class="page-tab" data-page="records">
       <span class="icon">📋</span>
       <span>รายการทั้งหมด</span>
+    </button>
+    <button class="page-tab" data-page="history">
+      <span class="icon">📜</span>
+      <span>ประวัติ</span>
     </button>
   </div>
 
@@ -1922,6 +1991,43 @@
         <h3>ไม่พบรายการ</h3>
         <p>ลองปรับตัวกรองหรือเพิ่มรายการใหม่</p>
       </div>
+    </div>
+  </div>
+
+  <!-- ============= HISTORY PAGE ============= -->
+  <div class="page-content" id="page-history">
+    <!-- สรุปภาพรวม -->
+    <div class="stats" id="histStats" style="margin-bottom:18px;"></div>
+
+    <!-- กราฟค่าใช้จ่ายรายปี -->
+    <div class="chart-card" style="margin-bottom:18px;">
+      <div class="chart-title">💰 ค่าใช้จ่ายรวมรายปี</div>
+      <div style="height:220px;"><canvas id="histYearChart"></canvas></div>
+    </div>
+
+    <!-- ตัวกรอง + สลับมุมมอง -->
+    <div class="toolbar" style="margin-bottom:16px;">
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+        <div style="display:flex; gap:4px; background:var(--ivory); padding:4px; border-radius:10px;">
+          <button class="hist-view-btn active" data-view="time">🕐 ตามเวลา</button>
+          <button class="hist-view-btn" data-view="vehicle">🚗 ตามรถ</button>
+        </div>
+        <select class="filter-select" id="histFilterPlate"><option value="all">รถทุกคัน</option></select>
+        <select class="filter-select" id="histFilterYear"><option value="all">ทุกปี</option></select>
+        <select class="filter-select" id="histFilterType">
+          <option value="all">ทุกประเภท</option>
+          <option value="ต่อภาษี">ต่อภาษี</option>
+          <option value="ประกันภัย">ประกันภัย</option>
+          <option value="พ.ร.บ.">พ.ร.บ.</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- รายการประวัติ -->
+    <div id="histList"></div>
+    <div id="histEmpty" class="empty-state" style="display:none;">
+      <h3>ยังไม่มีประวัติ</h3>
+      <p>ประวัติจะปรากฏเมื่อกดปุ่ม 🔄 เพิ่มรอบใหม่ให้รายการต่างๆ</p>
     </div>
   </div>
 </main>

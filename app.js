@@ -2718,6 +2718,212 @@ function renderChart(canvasId, type, data, options = {}) {
 }
 
 // =========== Page Tabs ===========
+// =========== History Page (หน้าประวัติ) ===========
+let _histView = "time";   // "time" | "vehicle"
+let _histFilter = { plate: "all", year: "all", type: "all" };
+
+// รวมทุกรอบ (ปัจจุบัน + ประวัติ) ของทุก record เป็น list เดียว
+function collectAllRounds() {
+  const rounds = [];
+  records.forEach(r => {
+    const baseInfo = { recordId: r.id, plate: r.plate, vehicle: r.vehicle || "", type: r.type || "", category: r.category };
+    // รอบปัจจุบัน
+    rounds.push({
+      ...baseInfo,
+      isCurrent: true,
+      start: toDateInputValue(r.start),
+      end: toDateInputValue(r.end),
+      amount: Number(r.amount) || 0,
+      company: r.company || "",
+      handler: r.handler || "",
+      user: "",
+      when: toDateInputValue(r.start) || toDateInputValue(r.end) || "",
+    });
+    // รอบเก่าจากประวัติ
+    (Array.isArray(r.history) ? r.history : []).forEach(h => {
+      rounds.push({
+        ...baseInfo,
+        isCurrent: false,
+        start: toDateInputValue(h.start || ""),
+        end: toDateInputValue(h.end || h.oldEnd || h.newEnd || ""),
+        amount: Number(h.amount) || 0,
+        company: h.company || "",
+        handler: h.handler || "",
+        user: h.user || "",
+        when: h.archivedAt || h.date || "",
+      });
+    });
+  });
+  return rounds;
+}
+
+function roundYear(rd) {
+  const d = rd.start || rd.end || rd.when;
+  return d ? d.slice(0, 4) : "";
+}
+
+function renderHistoryPage() {
+  const all = collectAllRounds();
+  const archivedOnly = all.filter(r => !r.isCurrent);
+
+  // ---------- เติมตัวกรอง (ครั้งแรกหรือเมื่อรายการเปลี่ยน) ----------
+  const plateSel = $("histFilterPlate");
+  const plates = [...new Set(all.map(r => r.plate))].sort((a, b) => a.localeCompare(b));
+  const currentPlateVal = plateSel.value || "all";
+  plateSel.innerHTML = `<option value="all">รถทุกคัน</option>` +
+    plates.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join("");
+  plateSel.value = plates.includes(currentPlateVal) ? currentPlateVal : "all";
+
+  const yearSel = $("histFilterYear");
+  const years = [...new Set(all.map(roundYear).filter(Boolean))].sort().reverse();
+  const currentYearVal = yearSel.value || "all";
+  yearSel.innerHTML = `<option value="all">ทุกปี</option>` +
+    years.map(y => `<option value="${y}">พ.ศ. ${Number(y) + 543}</option>`).join("");
+  yearSel.value = years.includes(currentYearVal) ? currentYearVal : "all";
+
+  // ---------- สรุปภาพรวม ----------
+  const thisYear = String(new Date().getFullYear());
+  const lastYear = String(new Date().getFullYear() - 1);
+  const sumYear = (y) => all.filter(r => roundYear(r) === y).reduce((s, r) => s + r.amount, 0);
+  const spentThis = sumYear(thisYear);
+  const spentLast = sumYear(lastYear);
+  const diff = spentThis - spentLast;
+  const diffPct = spentLast > 0 ? Math.round(Math.abs(diff) / spentLast * 100) : 0;
+  $("histStats").innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">จ่ายปีนี้ (พ.ศ. ${Number(thisYear) + 543})</div>
+      <div class="stat-value">${fmtMoney(spentThis)}</div>
+      <div class="stat-sub">${diff === 0 || spentLast === 0 ? "" : diff > 0 ? `▲ เพิ่ม ${diffPct}% จากปีก่อน` : `▼ ลด ${diffPct}% จากปีก่อน`}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">จ่ายปีก่อน (พ.ศ. ${Number(lastYear) + 543})</div>
+      <div class="stat-value">${fmtMoney(spentLast)}</div>
+      <div class="stat-sub">เทียบเป็นฐาน</div>
+    </div>
+    <div class="stat-card success">
+      <div class="stat-label">รอบที่บันทึกไว้ทั้งหมด</div>
+      <div class="stat-value">${all.length}</div>
+      <div class="stat-sub">ประวัติเก่า ${archivedOnly.length} รอบ · ปัจจุบัน ${all.length - archivedOnly.length}</div>
+    </div>
+  `;
+
+  // ---------- กราฟรายปี ----------
+  const byYear = {};
+  all.forEach(r => {
+    const y = roundYear(r);
+    if (!y) return;
+    byYear[y] = (byYear[y] || 0) + r.amount;
+  });
+  const chartYears = Object.keys(byYear).sort();
+  const ctx = document.getElementById("histYearChart");
+  if (ctx && typeof Chart !== "undefined") {
+    if (chartInstances["histYearChart"]) chartInstances["histYearChart"].destroy();
+    chartInstances["histYearChart"] = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: chartYears.map(y => "พ.ศ. " + (Number(y) + 543)),
+        datasets: [{
+          data: chartYears.map(y => byYear[y]),
+          backgroundColor: chartYears.map(y => y === thisYear ? "#c9a961" : "#0a1f44"),
+          borderRadius: 8,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: c => fmtMoney(c.raw) } },
+        },
+        scales: {
+          y: { beginAtZero: true, ticks: { callback: v => "฿" + (v >= 1000 ? (v / 1000) + "k" : v) } },
+        },
+      },
+    });
+  }
+
+  // ---------- กรองรายการ ----------
+  _histFilter.plate = plateSel.value;
+  _histFilter.year = yearSel.value;
+  _histFilter.type = $("histFilterType").value;
+  let list = all.filter(r =>
+    (_histFilter.plate === "all" || r.plate === _histFilter.plate) &&
+    (_histFilter.year === "all" || roundYear(r) === _histFilter.year) &&
+    (_histFilter.type === "all" || (r.type || "").startsWith(_histFilter.type))
+  );
+
+  const listEl = $("histList");
+  const emptyEl = $("histEmpty");
+  if (list.length === 0) {
+    listEl.innerHTML = "";
+    emptyEl.style.display = "block";
+    return;
+  }
+  emptyEl.style.display = "none";
+
+  // diff เทียบรอบก่อนของ record เดียวกัน
+  const sortKey = r => r.start || r.end || r.when || "";
+  const byRecord = {};
+  all.forEach(r => { (byRecord[r.recordId] = byRecord[r.recordId] || []).push(r); });
+  Object.values(byRecord).forEach(arr => arr.sort((a, b) => sortKey(b).localeCompare(sortKey(a))));
+  const diffOf = (rd) => {
+    const arr = byRecord[rd.recordId] || [];
+    const i = arr.indexOf(rd);
+    const prev = arr[i + 1];
+    if (!prev || rd.amount <= 0 || prev.amount <= 0) return "";
+    const d = rd.amount - prev.amount;
+    if (Math.abs(d) < 0.01) return `<span class="tl-diff tl-same">= เท่าเดิม</span>`;
+    const up = d > 0;
+    return `<span class="tl-diff ${up ? "tl-up" : "tl-down"}">${up ? "▲ +" : "▼ −"}${fmtMoney(Math.abs(d)).replace("฿", "")}</span>`;
+  };
+
+  const cardOf = (rd) => {
+    const range = rd.start && rd.end ? `${fmtDate(rd.start)} → ${fmtDate(rd.end)}` : rd.end ? `ถึง ${fmtDate(rd.end)}` : "—";
+    const meta = [rd.company, rd.handler || rd.user].filter(Boolean).map(escapeHtml).join(" · ");
+    return `
+      <div class="hp-card ${rd.isCurrent ? "hp-current" : ""}" data-record="${escapeHtml(rd.recordId)}">
+        <div class="hp-main">
+          <div class="hp-plate">${escapeHtml(rd.plate)}
+            ${typeBadge(rd.type)}
+            ${rd.isCurrent ? '<span class="tl-badge-current">ปัจจุบัน</span>' : ""}
+          </div>
+          <div class="hp-range">📅 ${range}${meta ? " · " + meta : ""}</div>
+        </div>
+        <div class="hp-right">
+          <div class="hp-amount">${rd.amount > 0 ? fmtMoney(rd.amount) : "—"}</div>
+          <div>${diffOf(rd)}</div>
+        </div>
+      </div>
+    `;
+  };
+
+  if (_histView === "time") {
+    list.sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
+    listEl.innerHTML = list.map(cardOf).join("");
+  } else {
+    // จัดกลุ่มตามรถ
+    const groups = {};
+    list.forEach(r => { (groups[r.plate] = groups[r.plate] || []).push(r); });
+    listEl.innerHTML = Object.keys(groups).sort((a, b) => a.localeCompare(b)).map(plate => {
+      const arr = groups[plate].sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
+      const total = arr.reduce((s, r) => s + r.amount, 0);
+      const veh = arr.find(r => r.vehicle)?.vehicle || "";
+      return `
+        <div class="hp-group-head">
+          <span>🚗 ${escapeHtml(plate)}${veh ? ` <span class="hp-group-sub">${escapeHtml(veh)}</span>` : ""}</span>
+          <span class="hp-group-sub">${arr.length} รอบ · รวม ${fmtMoney(total)}</span>
+        </div>
+        ${arr.map(cardOf).join("")}
+      `;
+    }).join("");
+  }
+
+  // คลิกการ์ด → เปิดหน้าแก้ไข record นั้น
+  listEl.querySelectorAll(".hp-card").forEach(el => {
+    el.addEventListener("click", () => openModal(el.dataset.record));
+  });
+}
+
 function switchPage(page) {
   currentPage = page;
   document.querySelectorAll(".page-tab").forEach(t => {
@@ -2728,6 +2934,9 @@ function switchPage(page) {
   });
   if (page === "dashboard") {
     setTimeout(renderDashboard, 50);
+  }
+  if (page === "history") {
+    setTimeout(renderHistoryPage, 50);
   }
 }
 
@@ -3085,6 +3294,19 @@ function init() {
   // Page Tabs (Dashboard / Records)
   document.querySelectorAll(".page-tab").forEach(t => {
     t.addEventListener("click", () => switchPage(t.dataset.page));
+  });
+
+  // หน้าประวัติ: สลับมุมมอง + ตัวกรอง
+  document.querySelectorAll(".hist-view-btn").forEach(b => {
+    b.addEventListener("click", () => {
+      _histView = b.dataset.view;
+      document.querySelectorAll(".hist-view-btn").forEach(x =>
+        x.classList.toggle("active", x.dataset.view === _histView));
+      renderHistoryPage();
+    });
+  });
+  ["histFilterPlate", "histFilterYear", "histFilterType"].forEach(id => {
+    $(id).addEventListener("change", renderHistoryPage);
   });
 
   // Monthly Summary navigation
