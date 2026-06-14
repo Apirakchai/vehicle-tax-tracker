@@ -2243,6 +2243,9 @@
         <button class="btn btn-secondary btn-sm" id="btnPullData">ดึงข้อมูลจาก Sheets</button>
         <button class="btn btn-secondary btn-sm" id="btnPushAll">ส่งข้อมูลขึ้น Sheets</button>
         <button class="btn btn-secondary btn-sm" id="btnHealthCheck">🩺 ตรวจสุขภาพข้อมูล</button>
+        <button class="btn btn-secondary btn-sm" id="btnExportJson">⬇ ดาวน์โหลด JSON</button>
+        <button class="btn btn-secondary btn-sm" id="btnImportJson">⬆ อัปโหลด JSON</button>
+        <input type="file" id="importJsonFile" accept=".json,application/json" style="display:none;">
       </div>
       <div class="settings-row">
         <label>จำนวนรายการในระบบ: <span id="recordCount">0</span></label>
@@ -2401,6 +2404,27 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" id="renewCancel">ยกเลิก</button>
       <button class="btn btn-primary" id="renewConfirm">✓ บันทึกรอบใหม่</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import JSON Preview Modal -->
+<div class="modal-overlay" id="importPreviewOverlay">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <h2>⬆ ยืนยันการนำเข้า JSON</h2>
+      <button class="modal-close" id="importPreviewClose">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="importPreviewBody"></div>
+      <div style="margin-top:14px; font-size:12px; color:var(--gray); background:#fffbeb; padding:10px 12px; border-radius:8px;">
+        💡 ระบบจะ <strong>จับคู่ด้วยรหัส (id)</strong> — รายการที่มีอยู่จะถูกอัปเดต, รายการใหม่จะถูกเพิ่ม
+        <br>รายการเดิมที่ไม่ได้อยู่ในไฟล์ <strong>จะไม่ถูกลบ</strong> และระบบจะสำรองข้อมูลก่อนเขียนเสมอ
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="importPreviewCancel">ยกเลิก</button>
+      <button class="btn btn-primary" id="importPreviewConfirm">✓ นำเข้าข้อมูล</button>
     </div>
   </div>
 </div>

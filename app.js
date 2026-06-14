@@ -1817,6 +1817,116 @@ async function runDataHealthCheck() {
   }
 }
 
+// =========== Export / Import JSON (ครบทุก field) ===========
+function exportJson() {
+  const payload = {
+    type: "bcf-vehicle-tax-backup",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    exportedBy: getCurrentUserName(),
+    count: records.length,
+    records: records,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const today = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `bcf-vehicle-tax-${today}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  logActivity("export_json", `ดาวน์โหลด JSON (${records.length} รายการ)`);
+  showToast(`⬇ ดาวน์โหลด JSON แล้ว (${records.length} รายการ)`);
+}
+
+let _pendingImportRecords = null;  // เก็บข้อมูลที่ผ่านการตรวจ รอผู้ใช้ยืนยัน
+
+function handleImportFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    let parsed;
+    try {
+      parsed = JSON.parse(e.target.result);
+    } catch (err) {
+      showToast("ไฟล์ไม่ใช่ JSON ที่ถูกต้อง", "error");
+      return;
+    }
+    // รองรับทั้งรูปแบบ { records: [...] } และ array ตรงๆ
+    const incoming = Array.isArray(parsed) ? parsed
+                   : Array.isArray(parsed.records) ? parsed.records
+                   : null;
+    if (!incoming) {
+      showToast("ไม่พบรายการในไฟล์ (ต้องมี records เป็น array)", "error");
+      return;
+    }
+    // ตรวจความถูกต้อง: ทุก record ต้องมี id และ plate
+    const invalid = incoming.filter(r => !r || !r.id || !r.plate);
+    if (invalid.length > 0) {
+      showToast(`ไฟล์มี ${invalid.length} รายการที่ไม่มีรหัส (id) หรือทะเบียน — นำเข้าไม่ได้`, "error");
+      return;
+    }
+    // คำนวณสรุป
+    const existingIds = new Set(records.map(r => r.id));
+    let willUpdate = 0, willAdd = 0;
+    incoming.forEach(r => existingIds.has(r.id) ? willUpdate++ : willAdd++);
+
+    _pendingImportRecords = incoming;
+    $("importPreviewBody").innerHTML = `
+      <div class="rd-row"><span class="rd-key">รายการในไฟล์</span><span class="rd-val">${incoming.length} รายการ</span></div>
+      <div class="rd-row"><span class="rd-key">จะอัปเดต (รหัสตรงกับของเดิม)</span><span class="rd-val">${willUpdate} รายการ</span></div>
+      <div class="rd-row"><span class="rd-key">จะเพิ่มใหม่</span><span class="rd-val" style="color:var(--green);">${willAdd} รายการ</span></div>
+      <div class="rd-row"><span class="rd-key">ในเครื่องตอนนี้</span><span class="rd-val">${records.length} รายการ</span></div>
+    `;
+    $("importPreviewOverlay").classList.add("show");
+    isModalOpen = true;
+  };
+  reader.onerror = () => showToast("อ่านไฟล์ไม่สำเร็จ", "error");
+  reader.readAsText(file);
+}
+
+function closeImportPreview() {
+  $("importPreviewOverlay").classList.remove("show");
+  isModalOpen = false;
+  _pendingImportRecords = null;
+  $("importJsonFile").value = "";
+}
+
+async function confirmImport() {
+  if (!_pendingImportRecords) return;
+  const incoming = _pendingImportRecords;
+
+  // สำรองข้อมูลปัจจุบันลง localStorage ก่อนเขียน (กู้คืนได้)
+  try {
+    localStorage.setItem("bcf_vt_preimport_backup", JSON.stringify({
+      at: new Date().toISOString(),
+      records: records,
+    }));
+  } catch (e) {}
+
+  // Merge ด้วย id: มีอยู่ → แทนที่, ใหม่ → เพิ่ม (ไม่ลบของเดิมที่ไม่อยู่ในไฟล์)
+  const byId = {};
+  records.forEach(r => { byId[r.id] = r; });
+  let updated = 0, added = 0;
+  incoming.forEach(r => {
+    if (byId[r.id]) updated++; else added++;
+    byId[r.id] = r;
+  });
+  records = Object.values(byId);
+  saveRecords();
+
+  // ส่งขึ้น Sheets ผ่านคิว (ทีละรายการ ปลอดภัย)
+  incoming.forEach(r => enqueueSync("upsert", r));
+  flushSyncQueue();
+
+  logActivity("import_json", `นำเข้า JSON: อัปเดต ${updated}, เพิ่มใหม่ ${added}`);
+  closeImportPreview();
+  renderAll();
+  showToast(`✅ นำเข้าสำเร็จ — อัปเดต ${updated}, เพิ่มใหม่ ${added} รายการ (กำลังซิงค์ขึ้น Sheets)`);
+}
+
 async function pullFromSheets() {
   const settings = loadSettings();
   if (!settings.webhookUrl) {
@@ -3521,6 +3631,18 @@ function init() {
   $("btnPushAll").addEventListener("click", pushAllToSheets);
   $("btnResetData").addEventListener("click", resetData);
   $("btnHealthCheck").addEventListener("click", runDataHealthCheck);
+  // Export / Import JSON
+  $("btnExportJson").addEventListener("click", exportJson);
+  $("btnImportJson").addEventListener("click", () => $("importJsonFile").click());
+  $("importJsonFile").addEventListener("change", (e) => {
+    if (e.target.files && e.target.files[0]) handleImportFile(e.target.files[0]);
+  });
+  $("importPreviewClose").addEventListener("click", closeImportPreview);
+  $("importPreviewCancel").addEventListener("click", closeImportPreview);
+  $("importPreviewConfirm").addEventListener("click", confirmImport);
+  $("importPreviewOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "importPreviewOverlay") closeImportPreview();
+  });
   // คลิก sync badge → ส่งคิวค้างทันที
   $("syncStatus").addEventListener("click", () => {
     const q = loadPendingQueue();
@@ -3550,6 +3672,7 @@ function init() {
       closeModal();
       closeSettings();
       closeRoundDetail();
+      closeImportPreview();
     }
     if ((e.ctrlKey || e.metaKey) && e.key === "n") {
       e.preventDefault();
