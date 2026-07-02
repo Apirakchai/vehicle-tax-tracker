@@ -858,6 +858,7 @@ async function fetchLogsFromSheets(limit) {
 
 // =========== Server Settings (Master Switches) ===========
 let _cachedNotifyEnabled = true;  // local cache, refreshed from server
+let _cachedTelegramEnabled = true;  // สวิตช์ Telegram
 
 async function fetchServerSettings() {
   const settings = loadSettings();
@@ -895,6 +896,9 @@ async function loadNotifyEnabledFlag() {
   if (data && data.notifications_enabled) {
     _cachedNotifyEnabled = String(data.notifications_enabled.value).toLowerCase() === "true";
   }
+  if (data && data.telegram_enabled) {
+    _cachedTelegramEnabled = String(data.telegram_enabled.value).toLowerCase() === "true";
+  }
   return _cachedNotifyEnabled;
 }
 
@@ -912,20 +916,78 @@ async function toggleMasterNotify() {
   showToast(newValue ? "🔔 เปิดการแจ้งเตือนเมลแล้ว" : "🔕 ปิดการแจ้งเตือนเมลแล้ว — จะไม่ส่งเมลจนกว่าจะเปิดอีก", newValue ? "success" : "warning");
 }
 
+async function toggleTelegramNotify() {
+  const newValue = !_cachedTelegramEnabled;
+  const ok = await setServerSetting("telegram_enabled", newValue ? "true" : "false");
+  if (!ok) {
+    showToast("เปลี่ยนการตั้งค่าไม่สำเร็จ", "error");
+    return;
+  }
+  _cachedTelegramEnabled = newValue;
+  logActivity(newValue ? "telegram_on" : "telegram_off",
+    newValue ? "เปิดการแจ้งเตือน Telegram" : "ปิดการแจ้งเตือน Telegram");
+  updateNotifySwitchUI();
+  showToast(newValue ? "📨 เปิดการแจ้งเตือน Telegram แล้ว" : "🔕 ปิดการแจ้งเตือน Telegram แล้ว", newValue ? "success" : "warning");
+}
+
+async function sendTestTelegram() {
+  const settings = loadSettings();
+  if (!settings.webhookUrl) {
+    showToast("กรุณาตั้งค่า Web App URL ก่อน", "error");
+    return;
+  }
+  const btn = $("btnTestTelegram");
+  btn.disabled = true;
+  btn.textContent = "กำลังส่ง...";
+  try {
+    const url = settings.webhookUrl + (settings.webhookUrl.includes("?") ? "&" : "?")
+      + "action=telegramtest&t=" + Date.now();
+    const res = await fetch(url, { cache: "no-store" });
+    const result = await res.json();
+    if (result.data && result.data.ok) {
+      showToast("✅ ส่งข้อความทดสอบเข้ากลุ่ม Telegram แล้ว — เช็คในกลุ่มได้เลย");
+    } else {
+      showToast("ส่งไม่สำเร็จ: " + ((result.data && result.data.error) || "ไม่ทราบสาเหตุ"), "error");
+    }
+  } catch (e) {
+    showToast("ส่งไม่สำเร็จ: " + e.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "📤 ทดสอบส่ง";
+  }
+}
+
 function updateNotifySwitchUI() {
   const toggle = document.getElementById("masterNotifyToggle");
   const label = document.getElementById("masterNotifyLabel");
   const desc = document.getElementById("masterNotifyDesc");
-  if (!toggle) return;
-  toggle.classList.toggle("on", _cachedNotifyEnabled);
-  if (label) {
-    label.textContent = _cachedNotifyEnabled ? "🔔 ส่งเมลแจ้งเตือน: เปิด" : "🔕 ส่งเมลแจ้งเตือน: ปิด";
-    label.style.color = _cachedNotifyEnabled ? "var(--green)" : "var(--red)";
+  if (toggle) {
+    toggle.classList.toggle("on", _cachedNotifyEnabled);
+    if (label) {
+      label.textContent = _cachedNotifyEnabled ? "🔔 ส่งเมลแจ้งเตือน: เปิด" : "🔕 ส่งเมลแจ้งเตือน: ปิด";
+      label.style.color = _cachedNotifyEnabled ? "var(--green)" : "var(--red)";
+    }
+    if (desc) {
+      desc.textContent = _cachedNotifyEnabled
+        ? "ระบบส่งเมลแจ้งเตือนตามปกติ (เลยกำหนดทุกวัน · ด่วน 15 วัน · ใกล้ครบ 30 วัน)"
+        : "🚫 ปิดการส่งเมลทั้งระบบ — รถทุกคันจะไม่ได้รับการแจ้งเตือน จนกว่าจะกดเปิดอีกครั้ง";
+    }
   }
-  if (desc) {
-    desc.textContent = _cachedNotifyEnabled
-      ? "ระบบส่งเมลแจ้งเตือนตามปกติ (เลยกำหนดทุกวัน · ด่วน 15 วัน · ใกล้ครบ 30 วัน)"
-      : "🚫 ปิดการส่งเมลทั้งระบบ — รถทุกคันจะไม่ได้รับการแจ้งเตือน จนกว่าจะกดเปิดอีกครั้ง";
+  // Telegram switch
+  const tgToggle = document.getElementById("telegramToggle");
+  const tgLabel = document.getElementById("telegramLabel");
+  const tgDesc = document.getElementById("telegramDesc");
+  if (tgToggle) {
+    tgToggle.classList.toggle("on", _cachedTelegramEnabled);
+    if (tgLabel) {
+      tgLabel.textContent = _cachedTelegramEnabled ? "📨 แจ้งเตือน Telegram: เปิด" : "🔕 แจ้งเตือน Telegram: ปิด";
+      tgLabel.style.color = _cachedTelegramEnabled ? "var(--green)" : "var(--red)";
+    }
+    if (tgDesc) {
+      tgDesc.textContent = _cachedTelegramEnabled
+        ? "ส่งแจ้งเตือนเข้ากลุ่ม Telegram ตามปกติ (เลยกำหนดทุกวัน · ด่วน 15 วัน · ใกล้ครบ 30 วัน)"
+        : "🚫 ปิดการแจ้งเตือน Telegram — จะไม่ส่งเข้ากลุ่มจนกว่าจะเปิดอีกครั้ง";
+    }
   }
 }
 
@@ -3665,6 +3727,16 @@ function init() {
     if (!confirm(msg)) return;
     toggleMasterNotify();
   });
+  // Telegram toggle + test
+  $("telegramToggle").addEventListener("click", () => {
+    const willDisable = _cachedTelegramEnabled;
+    const msg = willDisable
+      ? "ปิดการแจ้งเตือน Telegram?\n\nจะไม่ส่งข้อความเข้ากลุ่มจนกว่าจะเปิดอีกครั้ง"
+      : "เปิดการแจ้งเตือน Telegram?\n\nระบบจะส่งแจ้งเตือนเข้ากลุ่ม \"ภาษี / ประกัน รถยนต์\" ทุกเช้า";
+    if (!confirm(msg)) return;
+    toggleTelegramNotify();
+  });
+  $("btnTestTelegram").addEventListener("click", sendTestTelegram);
 
   // Keyboard shortcuts
   document.addEventListener("keydown", e => {
